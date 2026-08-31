@@ -14,8 +14,9 @@ from datetime import datetime, timezone
 from fastapi import FastAPI, WebSocket
 from fastapi.middleware.cors import CORSMiddleware
 
-from app import ws
+from app import PHASE, ws
 from app.config import get_settings
+from app.recorder import RawRecorder
 
 logging.basicConfig(
     level=logging.INFO,
@@ -27,18 +28,42 @@ STARTED_AT = datetime.now(timezone.utc)
 
 
 @asynccontextmanager
-async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
+async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+    """Start the recorder alongside the API when live mode is on.
+
+    The recorder deliberately lives *inside* this process. Phase 2's live
+    adapter subscribes to it in-process rather than opening a second MQTT
+    connection, which is what the OpenF1 docs ask for. If you would rather
+    record with nothing else in the way - the Tier A fallback - run
+    `make record` instead of `make dev`, and do not run both: that would open
+    two connections and write the same messages twice.
+    """
     settings = get_settings()
     log.info("backend starting, live_mode=%s", settings.live_mode)
-    if settings.credentials_present:
-        log.info("OpenF1 credentials loaded from backend/.env")
-    else:
-        log.warning(
-            "OpenF1 credentials not set. Live mode will refuse to start. "
-            "Copy backend/.env.example to backend/.env and fill it in."
-        )
     log.info("recordings will be written under %s", settings.recordings_dir)
+
+    recorder: RawRecorder | None = None
+    if settings.live_mode:
+        if not settings.credentials_present:
+            log.error(
+                "LIVE_MODE is true but credentials are missing. Set OPENF1_USERNAME "
+                "and OPENF1_PASSWORD in backend/.env. Starting without the recorder."
+            )
+        else:
+            recorder = RawRecorder(settings)
+            try:
+                recorder.start()
+            except Exception:
+                log.exception("recorder failed to start; the API stays up")
+                recorder = None
+    else:
+        log.info("LIVE_MODE is false - not connecting to OpenF1")
+
+    app.state.recorder = recorder
     yield
+
+    if recorder is not None:
+        recorder.stop()
     log.info("backend shutting down")
 
 
@@ -64,15 +89,18 @@ app.add_middleware(
 
 @app.get("/health")
 async def health() -> dict[str, object]:
+    """Everything needed to answer "is it working?" without reading the logs."""
     settings = get_settings()
+    recorder: RawRecorder | None = getattr(app.state, "recorder", None)
     return {
         "status": "ok",
         "version": app.version,
-        "phase": 0,
+        "phase": PHASE,
         "live_mode": settings.live_mode,
         "credentials_present": settings.credentials_present,
         "started_at": STARTED_AT.isoformat(timespec="seconds"),
         "browsers_connected": ws.manager.count,
+        "recorder": recorder.health() if recorder else None,
     }
 
 
