@@ -1,18 +1,13 @@
-import { useEffect, useRef, useState } from 'react'
-import type { ConnectionStatus, Snapshot } from './types'
+import { useEffect, useRef } from 'react'
+import { useStore } from '../store'
+import type { SessionState } from '../types/sessionState'
 
 /**
- * Owns the one WebSocket to the backend.
+ * Owns the one WebSocket and feeds the store.
  *
- * Two things here matter beyond Phase 0 and are why this is a hook rather than
- * a few lines in App.tsx:
- *
- * 1. Reconnect with capped exponential backoff. On Friday the laptop may sleep,
- *    wifi may drop, or the backend may be restarted mid-session. The page must
- *    come back on its own without a manual refresh.
- * 2. `lastMessageAt` is recorded on every inbound frame. The StatusStrip's
- *    data-age counter is derived from it, and that counter is the single
- *    clearest signal that the feed is alive.
+ * Reconnects with capped exponential backoff, because on a race Friday the
+ * laptop may sleep, wifi may drop, or the backend may be restarted mid-session
+ * and the page has to come back without a manual refresh.
  */
 
 const RECONNECT_BASE_MS = 500
@@ -23,30 +18,18 @@ function socketUrl(): string {
   return `${protocol}//${window.location.host}/ws`
 }
 
-export interface SessionSocket {
-  status: ConnectionStatus
-  snapshot: Snapshot | null
-  /** epoch ms of the last frame received, or null if none yet */
-  lastMessageAt: number | null
-  reconnectAttempts: number
-}
-
-export function useSessionSocket(): SessionSocket {
-  const [status, setStatus] = useState<ConnectionStatus>('connecting')
-  const [snapshot, setSnapshot] = useState<Snapshot | null>(null)
-  const [lastMessageAt, setLastMessageAt] = useState<number | null>(null)
-  const [reconnectAttempts, setReconnectAttempts] = useState(0)
-
+export function useSessionSocket(): void {
   const socketRef = useRef<WebSocket | null>(null)
   const timerRef = useRef<number | null>(null)
   const attemptsRef = useRef(0)
   const closedByUsRef = useRef(false)
 
   useEffect(() => {
+    const { applySnapshot, setStatus, setReconnectAttempts } = useStore.getState()
     closedByUsRef.current = false
 
     const connect = () => {
-      setStatus((current) => (current === 'open' ? current : 'connecting'))
+      if (useStore.getState().status !== 'open') setStatus('connecting')
       const socket = new WebSocket(socketUrl())
       socketRef.current = socket
 
@@ -57,17 +40,12 @@ export function useSessionSocket(): SessionSocket {
       }
 
       socket.onmessage = (event: MessageEvent<string>) => {
-        setLastMessageAt(Date.now())
         try {
-          setSnapshot(JSON.parse(event.data) as Snapshot)
+          applySnapshot(JSON.parse(event.data) as SessionState)
         } catch {
-          // A malformed frame must not kill the socket; the next one may be fine.
+          // A malformed frame must not kill the socket; the next may be fine.
           console.warn('discarded unparseable frame')
         }
-      }
-
-      socket.onerror = () => {
-        // onclose always follows, so reconnect is handled there only.
       }
 
       socket.onclose = () => {
@@ -92,6 +70,4 @@ export function useSessionSocket(): SessionSocket {
       socketRef.current?.close()
     }
   }, [])
-
-  return { status, snapshot, lastMessageAt, reconnectAttempts }
 }

@@ -15,7 +15,9 @@ from fastapi import FastAPI, WebSocket
 from fastapi.middleware.cors import CORSMiddleware
 
 from app import PHASE, ws
+from app.adapters.openf1_live import OpenF1LiveSource
 from app.config import get_settings
+from app.models import RecorderInfo, SessionState
 from app.recorder import RawRecorder
 
 logging.basicConfig(
@@ -43,6 +45,26 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     log.info("recordings will be written under %s", settings.recordings_dir)
 
     recorder: RawRecorder | None = None
+    source: OpenF1LiveSource | None = None
+
+    if settings.demo_mode:
+        # Imported here, not at module scope: sample data is a development
+        # convenience and must not be a dependency of the production path.
+        from scripts.sample_data import build_source
+
+        source = build_source()
+        log.warning(
+            "DEMO_MODE is on: serving a synthetic grid, NOT connecting to OpenF1. "
+            "Turn it off in backend/.env before the session."
+        )
+        app.state.recorder = None
+        app.state.source = source
+        app.state.demo = True
+        yield
+        log.info("backend shutting down")
+        return
+
+    app.state.demo = False
     if settings.live_mode:
         if not settings.credentials_present:
             log.error(
@@ -51,15 +73,22 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             )
         else:
             recorder = RawRecorder(settings)
+            # The live adapter rides on the recorder's stream instead of
+            # opening a second MQTT connection. Registered before start() so
+            # no message can slip past between connecting and subscribing.
+            source = OpenF1LiveSource(credentials_present=True)
+            recorder.add_subscriber(source.on_raw_message)
             try:
                 recorder.start()
             except Exception:
                 log.exception("recorder failed to start; the API stays up")
                 recorder = None
+                source = None
     else:
         log.info("LIVE_MODE is false - not connecting to OpenF1")
 
     app.state.recorder = recorder
+    app.state.source = source
     yield
 
     if recorder is not None:
@@ -100,15 +129,35 @@ async def health() -> dict[str, object]:
         "credentials_present": settings.credentials_present,
         "started_at": STARTED_AT.isoformat(timespec="seconds"),
         "browsers_connected": ws.manager.count,
+        "demo_mode": settings.demo_mode,
         "recorder": recorder.health() if recorder else None,
+        "source": source.stats() if (source := getattr(app.state, "source", None)) else None,
     }
+
+
+def build_snapshot() -> SessionState:
+    """Assemble the current SessionState from whichever source is running."""
+    settings = get_settings()
+    source: OpenF1LiveSource | None = getattr(app.state, "source", None)
+    if source is None:
+        return ws.idle_snapshot(settings.credentials_present)
+
+    recorder: RawRecorder | None = getattr(app.state, "recorder", None)
+    info = None
+    if recorder is not None:
+        health = recorder.health()
+        info = RecorderInfo(
+            connected=health["connected"],
+            messages_recorded=health["messages_recorded"],
+            last_message_at=health["last_message_at"],
+            topics=health["topics"],
+            token_expires_at=health["token_expires_at"],
+            last_error=health["last_error"],
+        )
+    mode = "demo" if getattr(app.state, "demo", False) else "live"
+    return source.snapshot(mode=mode, recorder=info)
 
 
 @app.websocket("/ws")
 async def websocket_route(websocket: WebSocket) -> None:
-    settings = get_settings()
-    await ws.websocket_endpoint(
-        websocket,
-        live_mode=settings.live_mode,
-        credentials_present=settings.credentials_present,
-    )
+    await ws.websocket_endpoint(websocket, build_snapshot)

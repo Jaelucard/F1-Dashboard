@@ -13,7 +13,7 @@ def test_health_route() -> None:
         assert response.status_code == 200
         body = response.json()
         assert body["status"] == "ok"
-        assert body["phase"] == 1
+        assert body["phase"] == 2
         assert set(body) >= {
             "status",
             "version",
@@ -36,7 +36,7 @@ def test_websocket_pushes_a_snapshot() -> None:
     with TestClient(app) as client, client.websocket_connect("/ws") as socket:
         message = socket.receive_json()
         assert message["type"] == "snapshot"
-        assert message["phase"] == 1
+        assert message["phase"] == 2
         assert message["drivers"] == []
         assert "server_time" in message
 
