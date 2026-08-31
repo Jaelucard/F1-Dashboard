@@ -14,7 +14,7 @@ Formula One Management, or the FIA.** Data is provided by the OpenF1 API.
 | Phase | What it covers | State |
 |---|---|---|
 | 0 | Skeleton: FastAPI health route, WebSocket, React shell, `make dev` | Done |
-| 1 | `auth.py` + `recorder.py`: token, MQTT, raw `.jsonl` capture | Not started |
+| 1 | `auth.py` + `recorder.py`: token, MQTT, raw `.jsonl` capture | Done |
 | 2 | Live state, `ws.py` snapshot, leaderboard, status strip | Not started |
 | 3-6 | Replay, track map, 2026 aero mapping, radio, polish (Tier B) | Not started |
 
@@ -89,11 +89,84 @@ and so on).
 
 ## Recording a live session
 
-*(Phase 1 - not yet implemented.)*
+Two ways to run, and you should run **one or the other, never both** - each
+opens its own MQTT connection, and two connections would write every message
+twice.
+
+```bash
+make record         # recorder only, no UI. The Tier A fallback.
+make dev            # API + UI, with the recorder running inside the backend
+```
+
+`make record` is the one to trust when all that matters is capturing the
+session. It imports only `config` and `auth`, so no bug in the adapters, the
+WebSocket layer, or the frontend can stop it. `make dev` runs the same recorder
+inside the FastAPI process; from Phase 2 the live adapter subscribes to it
+in-process rather than opening a second connection, as the OpenF1 docs ask.
+
+Set `LIVE_MODE=true` in `backend/.env` first, or the backend will not connect.
+
+Output lands in `recordings/<session_key>/<topic>.jsonl`, one JSON object per
+line:
+
+```json
+{"received_at":"2026-09-04T11:30:15.123+00:00","topic":"v1/laps","payload":{...}}
+```
+
+`payload` is the message exactly as received, including OpenF1's `_id` and
+`_key` fields. A message that is not valid JSON is still recorded, wrapped as
+`{"_raw": "...", "_decode_error": "..."}` - the recording is the artefact, so
+nothing is ever dropped for being unparseable. Every line is flushed to the OS
+immediately, so you can `tail -f` a file while a session is running.
+
+### Checking it is alive
+
+```bash
+curl -s localhost:8000/health | python3 -m json.tool     # with make dev
+```
+
+The `recorder` block reports `connected`, `messages_recorded`, per-topic counts,
+`last_message_at`, `session_keys` and `token_expires_at`. Outside a session
+window a healthy recorder shows `connected: true` with `messages_recorded: 0`
+and logs `connected, subscribed to '#' - waiting for messages`. That is not a
+fault; the broker is simply quiet.
+
+### Disk space
+
+`location` and `car_data` both arrive at roughly 3.7 Hz per car. With 20 cars
+that is around 150 messages a second, or very roughly **100 MB per hour of
+running**. A full weekend is likely to be somewhere under a gigabyte. Check you
+have the room before FP1.
+
+### Token rotation
+
+The OAuth2 token *is* the MQTT password and lasts one hour. Rather than waiting
+to be disconnected by the broker at an unpredictable moment, the recorder
+reconnects deliberately five minutes before expiry, while the current token is
+still valid. Unexpected drops are handled by paho's automatic reconnect, and a
+refused connection forces a fresh token. Files are appended to throughout, so a
+reconnect is invisible in the recording.
 
 ## Replaying a session
 
 *(Phase 3 - not yet implemented.)*
+
+## Notes on the OpenF1 API
+
+Confirmed by hand against the live API, because the docs do not spell these out:
+
+- **`/v1/car_data` must be windowed.** Asking for a whole session returns
+  `{"detail": "No results found."}` rather than an error - it appears to be a
+  result-size guard. Narrow it with `date>` / `date<` (a two-minute window for
+  one driver returns ~445 rows, confirming ~3.7 Hz). The Phase 5 historical
+  adapter has to page through time windows rather than ask for a session.
+- **`gmt_offset` is a string**, formatted `"02:00:00"`, not a number of hours.
+  `SessionPicker` has to parse it before doing local-time arithmetic.
+- **`/v1/laps` has `date_start`**, not `date`, and also carries
+  `segments_sector_1/2/3` which the build plan does not mention.
+- **`/v1/pit` has three duration fields**: `pit_duration`, `lane_duration` and
+  `stop_duration`.
+- `team_colour` comes back as a bare hex string with no `#` (e.g. `"4781D7"`).
 
 ## 2026 regulations
 

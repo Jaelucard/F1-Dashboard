@@ -18,6 +18,8 @@ from typing import Any
 
 from fastapi import WebSocket, WebSocketDisconnect
 
+from app import PHASE
+
 log = logging.getLogger(__name__)
 
 # How often we push, even when nothing changed. A steady beat is what lets the
@@ -83,7 +85,7 @@ def placeholder_snapshot(live_mode: bool, credentials_present: bool) -> dict[str
     return {
         "type": "snapshot",
         "server_time": _utc_now_iso(),
-        "phase": 0,
+        "phase": PHASE,
         "mode": "live" if live_mode else "idle",
         "credentials_present": credentials_present,
         "session": None,
