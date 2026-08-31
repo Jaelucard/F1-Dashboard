@@ -1,0 +1,32 @@
+# --- secrets ---
+.env
+backend/.env
+*.env
+!.env.example
+!backend/.env.example
+
+# --- python ---
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+*.egg-info/
+
+# --- node ---
+node_modules/
+dist/
+.vite/
+*.local
+
+# --- recordings ---
+# Raw session captures are large and are the artefact, not source.
+recordings/*
+!recordings/.gitkeep
+
+# --- os / editor ---
+.DS_Store
+.idea/
+.vscode/
