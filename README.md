@@ -15,7 +15,7 @@ Formula One Management, or the FIA.** Data is provided by the OpenF1 API.
 |---|---|---|
 | 0 | Skeleton: FastAPI health route, WebSocket, React shell, `make dev` | Done |
 | 1 | `auth.py` + `recorder.py`: token, MQTT, raw `.jsonl` capture | Done |
-| 2 | Live state, `ws.py` snapshot, leaderboard, status strip | Not started |
+| 2 | Live state, `ws.py` snapshot, leaderboard, status strip | Done |
 | 3-6 | Replay, track map, 2026 aero mapping, radio, polish (Tier B) | Not started |
 
 The first live test is the Italian Grand Prix at Monza, FP1 on Friday 4 September 2026.
@@ -66,9 +66,64 @@ Useful endpoints:
 - `ws://127.0.0.1:8000/ws` - the single snapshot stream the UI consumes
 
 ```bash
-make test           # backend test suite
-make lint           # frontend eslint + tsc --noEmit
+make demo           # synthetic 22-car grid, connects to nothing
+make test           # backend (105) + frontend (42) test suites
+make types          # regenerate the TypeScript types and test fixture
+make lint           # oxlint + tsc -b
 ```
+
+### Seeing it work outside a session window
+
+There is no live data on a Tuesday, so `make demo` serves a synthetic 22-car
+grid through the ordinary WebSocket path. It never connects to OpenF1. The
+status strip shows `DEMO`, never `LIVE` - a synthetic grid must not be able to
+display a LIVE badge, or you could sit through a session believing you were
+recording it.
+
+## How the pieces fit
+
+```
+MQTT ──> recorder.py ──> recordings/<session_key>/<topic>.jsonl   (disk first)
+                └────> openf1_live.py ──> SessionState ──> ws.py ──> browser
+```
+
+The recorder writes every message to disk *before* handing it to the live
+adapter, and the adapter's exceptions are caught on the recorder's side. So a
+bug in the merge logic can break the leaderboard but can never cost a recording.
+The adapter subscribes in-process rather than opening a second MQTT connection.
+
+### One shared type
+
+`backend/app/models.py` defines `SessionState`. `make types` generates
+`frontend/src/types/sessionState.ts` from it, and a backend test fails if that
+file is stale - so the two sides of the WebSocket cannot disagree about the
+shape of a snapshot.
+
+The same mechanism generates `frontend/src/test/sampleSnapshot.json` by feeding
+sample messages through the real `OpenF1LiveSource`. The leaderboard test
+renders exactly the bytes the backend would send, rather than a hand-written
+guess about them.
+
+### Why whole snapshots instead of diffs
+
+`ws.py` pushes a complete `SessionState` once a second rather than streaming
+per-message deltas. At a few hundred messages a second a diff stream would mean
+a React render per message, and a browser that falls behind could never catch
+up. A whole snapshot is small (~13 KB for a full grid), always self-consistent,
+and means a browser reconnecting mid-session is correct immediately with no
+replay of missed deltas. The steady beat is also what makes the data-age counter
+meaningful: if snapshots stop, the backend is gone.
+
+### Merging by `_key`
+
+MQTT messages carry two fields the REST payloads do not: `_id`, an
+ever-increasing ordinal, and `_key`, the document identity. The same `_key` on
+the same topic is an **update to the same record**, which happens routinely on
+`v1/laps` as sector times fill in. The adapter upserts by `_key` and merges
+rather than replacing, so a revision carrying only sector 2 does not blank
+sector 1. Where two messages share a `_key`, the higher `_id` wins, so an
+out-of-order delivery cannot overwrite fresh data with stale data. Payloads
+without a `_key` (all the REST ones) fall back to a natural key per topic.
 
 ## What the supporter account unlocks
 

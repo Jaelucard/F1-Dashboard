@@ -1,10 +1,15 @@
 """The single WebSocket fan-out to connected browsers.
 
-Phase 0 only proves the socket opens and stays open. Phase 2 replaces the
-placeholder payload with a normalised ``SessionState`` snapshot, but the
-envelope shape and the broadcast machinery below stay as they are: every mode
-(live, replay, historical) pushes through this one path, so the browser cannot
-tell them apart.
+Every mode pushes through this one path, so the browser cannot tell live from
+replay from historical: it receives a ``SessionState`` and renders it.
+
+The push is a fixed-rate snapshot rather than a per-message diff. At a few
+hundred messages a second a diff stream would mean a React render per message,
+and a browser that falls behind can never catch up. A whole snapshot at a
+steady 1 Hz is small (20-ish drivers), always self-consistent, and lets a
+browser that reconnects mid-session be correct immediately with no replay of
+missed deltas. The steady beat is also what makes the data-age counter
+meaningful: if snapshots stop arriving, the backend is gone.
 """
 
 from __future__ import annotations
@@ -14,17 +19,18 @@ import contextlib
 import json
 import logging
 from datetime import datetime, timezone
-from typing import Any
+from typing import Any, Callable
 
 from fastapi import WebSocket, WebSocketDisconnect
 
 from app import PHASE
+from app.models import SessionState
 
 log = logging.getLogger(__name__)
 
-# How often we push, even when nothing changed. A steady beat is what lets the
-# frontend's data-age counter distinguish "feed is quiet" from "backend died".
 PUSH_INTERVAL_SECONDS = 1.0
+
+SnapshotProvider = Callable[[], SessionState]
 
 
 def _utc_now_iso() -> str:
@@ -56,8 +62,8 @@ class ConnectionManager:
     async def broadcast(self, message: dict[str, Any]) -> None:
         """Send to every open socket, dropping any that have died.
 
-        Serialise once rather than per-connection: with 20+ drivers the snapshot
-        is the biggest thing we send, and re-encoding it per browser is waste.
+        Serialise once rather than per-connection: the snapshot is the biggest
+        thing we send, and re-encoding it per browser is waste.
         """
         payload = json.dumps(message, separators=(",", ":"))
         async with self._lock:
@@ -80,28 +86,32 @@ class ConnectionManager:
 manager = ConnectionManager()
 
 
-def placeholder_snapshot(live_mode: bool, credentials_present: bool) -> dict[str, Any]:
-    """The Phase 0 stand-in for a real SessionState snapshot."""
-    return {
-        "type": "snapshot",
-        "server_time": _utc_now_iso(),
-        "phase": PHASE,
-        "mode": "live" if live_mode else "idle",
-        "credentials_present": credentials_present,
-        "session": None,
-        "drivers": [],
-    }
+def idle_snapshot(credentials_present: bool) -> SessionState:
+    """What we send when no data source is running (LIVE_MODE off, or no creds)."""
+    return SessionState(
+        phase=PHASE,
+        mode="idle",
+        server_time=_utc_now_iso(),
+        credentials_present=credentials_present,
+    )
 
 
 async def websocket_endpoint(
-    websocket: WebSocket, live_mode: bool, credentials_present: bool
+    websocket: WebSocket,
+    snapshot_provider: SnapshotProvider,
 ) -> None:
     await manager.connect(websocket)
     try:
         while True:
-            await websocket.send_text(
-                json.dumps(placeholder_snapshot(live_mode, credentials_present))
-            )
+            try:
+                state = snapshot_provider()
+            except Exception:  # noqa: BLE001
+                # A snapshot failure must not close the socket: the next tick
+                # may well succeed, and a dead socket looks like a dead backend.
+                log.exception("snapshot failed; sending an idle frame")
+                state = idle_snapshot(False)
+
+            await websocket.send_text(state.model_dump_json())
             await asyncio.sleep(PUSH_INTERVAL_SECONDS)
     except WebSocketDisconnect:
         pass

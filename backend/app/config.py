@@ -41,6 +41,15 @@ class Settings(BaseSettings):
     openf1_password: SecretStr = SecretStr("")
     live_mode: bool = False
 
+    demo_mode: bool = False
+    """Load a synthetic 22-car grid instead of connecting to OpenF1.
+
+    Exists so the UI can be checked away from a session window - there is no
+    live data on a Tuesday, and waiting until Friday to discover the leaderboard
+    is broken would be a poor plan. Never connects to anything, and is off
+    unless explicitly enabled.
+    """
+
     # Where recorder.py writes recordings/<session_key>/<topic>.jsonl
     recordings_dir: Path = REPO_ROOT / "recordings"
 

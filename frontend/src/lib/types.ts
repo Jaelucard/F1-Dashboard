@@ -1,19 +1,10 @@
 /**
- * Phase 0 placeholder for the shared SessionState type.
+ * Frontend-only types.
  *
- * From Phase 2 this file is GENERATED from the pydantic models in
- * backend/app/models.py, so the two sides cannot drift. Do not hand-edit it
- * once generation is wired up.
+ * The wire types (SessionState, DriverState, ...) are NOT here: they are
+ * generated from the pydantic models into `src/types/sessionState.ts`. Anything
+ * describing a snapshot belongs there, so the two sides cannot drift.
  */
 
-export interface Snapshot {
-  type: 'snapshot'
-  server_time: string
-  phase: number
-  mode: 'live' | 'replay' | 'historical' | 'idle'
-  credentials_present: boolean
-  session: unknown | null
-  drivers: unknown[]
-}
-
+/** State of the WebSocket itself, which the server knows nothing about. */
 export type ConnectionStatus = 'connecting' | 'open' | 'closed'
