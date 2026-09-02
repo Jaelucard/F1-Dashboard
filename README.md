@@ -18,8 +18,6 @@ Formula One Management, or the FIA.** Data is provided by the OpenF1 API.
 | 2 | Live state, `ws.py` snapshot, leaderboard, status strip | Done |
 | 3-6 | Replay, track map, 2026 aero mapping, radio, polish (Tier B) | Not started |
 
-The first live test is the Italian Grand Prix at Monza, FP1 on Friday 4 September 2026.
-
 ## Requirements
 
 - **Python 3.13.** The backend is pinned to 3.13 (`PYTHON` in the Makefile).
@@ -74,13 +72,12 @@ make lint           # ruff (backend), oxlint + tsc -b (frontend)
 
 ### Seeing it work outside a session window
 
-There is no live data on a Tuesday, so `make demo` serves a synthetic 22-car
+When there is no livestream, `make demo` serves a synthetic 22-car
 grid through the ordinary WebSocket path. It never connects to OpenF1. The
-status strip shows `DEMO`, never `LIVE` - a synthetic grid must not be able to
-display a LIVE badge, or you could sit through a session believing you were
-recording it.
+status strip shows `DEMO` as a method to see if the UI works, or if something
+is broken and requires attention.
 
-## How the pieces fit
+## Architecture
 
 ```
 MQTT ──> recorder.py ──> recordings/<session_key>/<topic>.jsonl   (disk first)
@@ -170,14 +167,11 @@ the `adapter` block of every snapshot and under `source` in `/health`.
 
 ## What the supporter account unlocks
 
-Historical data from 2023 onwards is free and needs no authentication. A session
-becomes historical 30 minutes after it ends.
+For Free Users, the historical data from 2023 onwards is free and needs no authentication. 
+A session becomes historical 30 minutes after it ends.
 
-The supporter account unlocks the **live window**: from 30 minutes before a
-session starts to 30 minutes after it ends. That is the only way to get data
-during a session, and it is what makes the recorder worth running on a Friday.
-It also doubles the REST rate limit over the free tier's 3 requests/second and
-30 requests/minute.
+If you have the paid version, you can input your API key from OpenF1 and
+utilise the live version of this product to your liking.
 
 Authentication is OAuth2: `POST https://api.openf1.org/token` with a form body
 of `username` and `password` returns an `access_token` valid for one hour. Live
@@ -337,13 +331,9 @@ UI uses the current terms only: **Active Aero** (Straight Mode / Corner Mode),
 **Overtake Mode**, **Boost**, and **Recharge**. There are no DRS indicators,
 zones, or detection points anywhere in this project.
 
-OpenF1's `car_data` still exposes a legacy field named `drs`, and its docs have
-not been updated for 2026. It is currently unknown whether that field carries
-the aero state, Overtake Mode, or nothing at all. Until the Monza FP1 recording
-is analysed, it is treated as an opaque integer: recorded raw, surfaced as
-`aero_raw`, and never interpreted. The AERO and OT columns stay blank until the
-evidence supports a mapping. If the field turns out to be dead, those columns
-will be removed rather than left permanently empty.
+I'm still trying to optimise this by checking if i can track energy deployment throughout
+the race, but after much research i think its unlikely due to the fact that 
+the teams do consider battery usage/overtake mode readings too important to be made public :(
 
 ## Layout
 
