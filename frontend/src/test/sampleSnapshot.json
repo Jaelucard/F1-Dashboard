@@ -650,6 +650,37 @@
       "v1/car_data": 30112
     },
     "token_expires_at": "2026-09-04T12:30:00+00:00",
+    "last_error": null,
+    "recording_ok": true,
+    "write_failures": 0,
+    "fanout_dropped": 0,
+    "messages_possibly_lost": 0,
+    "may_be_incomplete": false,
+    "disk_free_bytes": null,
+    "disk_low": false
+  },
+  "feed": {
+    "state": "live",
+    "mqtt_connected": true,
+    "authenticated": true,
+    "last_message_at": "2026-09-04T11:46:04.812+00:00",
+    "data_age_seconds": 0.188,
+    "stale_after_seconds": 15.0,
+    "recording_ok": true,
     "last_error": null
-  }
+  },
+  "adapter": {
+    "active_session_key": 9999,
+    "sessions_retained": [
+      9999
+    ],
+    "messages_seen": 184,
+    "quarantined_records": 0,
+    "malformed_fields": 0,
+    "late_session_messages": 0,
+    "session_switches": 0,
+    "driver_build_errors": 0
+  },
+  "degraded": false,
+  "degraded_reason": null
 }

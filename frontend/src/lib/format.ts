@@ -24,13 +24,17 @@ export const NO_DATA = '—'
  * "0:", but a slow lap behind a safety car can exceed one, so both are handled.
  */
 export function formatLapTime(seconds: number | null | undefined): string {
-  if (seconds === null || seconds === undefined || !Number.isFinite(seconds)) return NO_DATA
+  if (typeof seconds !== 'number' || !Number.isFinite(seconds)) return NO_DATA
   if (seconds < 0) return NO_DATA
 
-  const minutes = Math.floor(seconds / 60)
-  const rest = seconds - minutes * 60
-  const restText = rest.toFixed(3).padStart(6, '0')
-  return minutes > 0 ? `${minutes}:${restText}` : rest.toFixed(3)
+  // Round to whole milliseconds *before* splitting into minutes. Splitting
+  // first and rounding the remainder turns 59.9996 into "60.000" and 119.9996
+  // into "1:60.000", because the remainder rounds up past the minute.
+  const totalMs = Math.round(seconds * 1000)
+  const minutes = Math.floor(totalMs / 60_000)
+  const restMs = totalMs - minutes * 60_000
+  const restText = (restMs / 1000).toFixed(3)
+  return minutes > 0 ? `${minutes}:${restText.padStart(6, '0')}` : restText
 }
 
 /**

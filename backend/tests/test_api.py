@@ -63,9 +63,16 @@ def test_live_mode_without_credentials_does_not_crash_the_api(
         patch.setenv("OPENF1_PASSWORD", "")
         get_settings.cache_clear()
         with TestClient(app) as client:
-            body = client.get("/health").json()
-            assert body["status"] == "ok"
+            response = client.get("/health")
+            assert response.status_code == 200, "liveness must still answer"
+            body = response.json()
+            # ...but it must not pretend to be fine: live mode was asked for
+            # and cannot be delivered.
+            assert body["status"] == "error"
+            assert body["ready"] is False
+            assert any("credentials" in problem for problem in body["problems"])
             assert body["live_mode"] is True
             assert body["credentials_present"] is False
             assert body["recorder"] is None
+            assert client.get("/ready").status_code == 503
     get_settings.cache_clear()

@@ -22,7 +22,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from app.models import RecorderInfo  # noqa: E402
+from app.models import FeedInfo, RecorderInfo  # noqa: E402
 from scripts.sample_data import build_source  # noqa: E402
 
 OUTPUT = (
@@ -48,6 +48,17 @@ def generate() -> str:
         ),
     )
     state.server_time = PINNED_SERVER_TIME
+    # Pinned rather than computed: the feed block depends on wall-clock age.
+    state.feed = FeedInfo(
+        state="live",
+        mqtt_connected=True,
+        authenticated=True,
+        last_message_at="2026-09-04T11:46:04.812+00:00",
+        data_age_seconds=0.188,
+        stale_after_seconds=15.0,
+        recording_ok=True,
+        last_error=None,
+    )
     return json.dumps(state.model_dump(), indent=2, sort_keys=False) + "\n"
 
 

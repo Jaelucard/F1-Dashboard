@@ -315,7 +315,9 @@ def test_connects_authenticates_and_subscribes_to_everything(tmp_path: Path) -> 
     assert client.connected_to == ("mqtt.openf1.org", 8883)
     assert client.username == "user@example.com"
     assert client.password == "token-1", "the MQTT password is the access token"
-    assert client.subscriptions == [("#", 0)]
+    # QoS 1 by default (settings.mqtt_qos): the broker retransmits across a
+    # brief drop, and the adapter is idempotent so a redelivery is harmless.
+    assert client.subscriptions == [("#", 1)]
     assert recorder.stats.connect_count == 1
 
 
@@ -340,16 +342,30 @@ def test_messages_arriving_via_the_paho_callback_are_recorded(tmp_path: Path) ->
 
 
 def test_refused_connection_forces_a_fresh_token(tmp_path: Path) -> None:
-    """'Not authorized' almost always means the token went stale."""
+    """'Not authorized' almost always means the token went stale.
+
+    The callback itself must not fetch: it runs on paho's network thread and a
+    blocking retry loop there stalls the connection. It flags the supervisor,
+    whose next cycle forces a refresh instead of reusing the cached token.
+    """
     client = FakeClient()
     recorder, tokens = make_recorder(tmp_path, client_factory=lambda: client)
 
     recorder._client = client  # noqa: SLF001
     recorder._on_connect(client, None, {}, 5, None)  # noqa: SLF001 - rc 5 = not authorized
 
-    assert tokens.calls == [True], "must force_refresh, not reuse the cached token"
+    assert tokens.calls == [], "no token HTTP inside the MQTT callback"
+    assert recorder.needs_token_refresh is True
     assert recorder.stats.connected is False
     assert "refused" in (recorder.stats.last_error or "")
+
+    recorder.start()
+    for _ in range(200):
+        if tokens.calls:
+            break
+        threading.Event().wait(0.01)
+    recorder.stop(timeout=5)
+    assert tokens.calls[0] is True, "the supervisor must force_refresh, not reuse the cached token"
 
 
 def test_disconnect_is_counted_and_does_not_raise(tmp_path: Path) -> None:
@@ -427,7 +443,7 @@ def test_token_rotation_reconnects_with_a_fresh_token(tmp_path: Path) -> None:
 
     first_three = clients[:3]
     assert [c.password for c in first_three] == ["token-1", "token-2", "token-3"]
-    assert all(c.subscriptions == [("#", 0)] for c in first_three)
+    assert all(c.subscriptions == [("#", 1)] for c in first_three)
     assert all(c.disconnected for c in first_three), "old connections are torn down"
 
 

@@ -9,6 +9,21 @@
  */
 
 
+/** What the live adapter did with the stream: scoping, validation, drops. */
+export interface AdapterInfo {
+  active_session_key: number | null
+  sessions_retained: number[]
+  messages_seen: number
+  /** Records rejected outright: not a dict, or missing an identity field. */
+  quarantined_records: number
+  /** Fields dropped from otherwise valid records for having the wrong type. */
+  malformed_fields: number
+  /** Messages for a session older than the active one. Never shown. */
+  late_session_messages: number
+  session_switches: number
+  driver_build_errors: number
+}
+
 /** Everything the leaderboard needs about one car, already merged. */
 export interface DriverState {
   driver_number: number
@@ -54,6 +69,25 @@ export interface DriverState {
   updated_at: string | null
 }
 
+/**
+ * Separates "the socket is open" from "data is actually arriving".
+ *
+ * A LIVE badge must mean all of: browser socket open, MQTT connected,
+ * authenticated, and a message received recently. Any one of those failing
+ * is a different problem with a different fix, so each is reported.
+ */
+export interface FeedInfo {
+  state: 'offline' | 'connecting' | 'auth_failed' | 'connected' | 'live' | 'stale'
+  mqtt_connected: boolean
+  authenticated: boolean
+  last_message_at: string | null
+  /** Seconds since the recorder last received any message. Null before the first. */
+  data_age_seconds: number | null
+  stale_after_seconds: number
+  recording_ok: boolean
+  last_error: string | null
+}
+
 export interface RaceControlMessage {
   date: string | null
   category: string | null
@@ -65,7 +99,10 @@ export interface RaceControlMessage {
   message: string | null
 }
 
-/** Feed health, so the UI can show whether data is actually arriving. */
+/**
+ * Recorder health, so the UI can show whether data is actually arriving
+ * and whether the on-disk capture can still be trusted.
+ */
 export interface RecorderInfo {
   connected: boolean
   messages_recorded: number
@@ -73,6 +110,23 @@ export interface RecorderInfo {
   topics: Record<string, number>
   token_expires_at: string | null
   last_error: string | null
+  /** False while writes to the recordings directory are failing. */
+  recording_ok: boolean
+  write_failures: number
+  /**
+   * Messages recorded to disk but dropped from the in-process fan-out queue
+   * because the live adapter could not keep up. The recording is unaffected.
+   */
+  fanout_dropped: number
+  /** Estimated from gaps in OpenF1's `_id` sequence. Heuristic: see README. */
+  messages_possibly_lost: number
+  /**
+   * True once anything may have been lost: a write failure, a disconnect
+   * after data had started flowing, or an `_id` gap. Never reset.
+   */
+  may_be_incomplete: boolean
+  disk_free_bytes: number | null
+  disk_low: boolean
 }
 
 /** Identity of the session being shown. From the v1/sessions topic. */
@@ -109,4 +163,12 @@ export interface SessionState {
   session_best_lap: number | null
   race_control: RaceControlMessage[]
   recorder: RecorderInfo | null
+  feed: FeedInfo | null
+  adapter: AdapterInfo | null
+  /**
+   * True when this frame is a re-send of the last good snapshot (or an empty
+   * one) because building a fresh snapshot failed. See `degraded_reason`.
+   */
+  degraded: boolean
+  degraded_reason: string | null
 }

@@ -147,3 +147,33 @@ describe('formatSessionClock', () => {
     expect(formatSessionClock('not a date')).toBe(NO_DATA)
   })
 })
+
+describe('formatLapTime rounding at minute boundaries', () => {
+  it('rolls 59.9996 over to 1:00.000 rather than printing 60.000', () => {
+    expect(formatLapTime(59.9996)).toBe('1:00.000')
+    expect(formatLapTime(59.9995)).toBe('1:00.000')
+  })
+
+  it('rolls 119.9996 over to 2:00.000 rather than 1:60.000', () => {
+    expect(formatLapTime(119.9996)).toBe('2:00.000')
+    expect(formatLapTime(179.9997)).toBe('3:00.000')
+  })
+
+  it('does not roll over when the thousandths do not round up', () => {
+    expect(formatLapTime(59.9994)).toBe('59.999')
+    expect(formatLapTime(119.9994)).toBe('1:59.999')
+  })
+
+  it('handles exact minutes and zero', () => {
+    expect(formatLapTime(60)).toBe('1:00.000')
+    expect(formatLapTime(120)).toBe('2:00.000')
+    expect(formatLapTime(0)).toBe('0.000')
+  })
+
+  it('shows no data for every non-finite or negative input', () => {
+    expect(formatLapTime(Infinity)).toBe(NO_DATA)
+    expect(formatLapTime(-Infinity)).toBe(NO_DATA)
+    expect(formatLapTime(-0.001)).toBe(NO_DATA)
+    expect(formatLapTime('79.5' as unknown as number)).toBe(NO_DATA)
+  })
+})

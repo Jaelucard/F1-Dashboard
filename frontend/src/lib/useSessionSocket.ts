@@ -1,73 +1,46 @@
-import { useEffect, useRef } from 'react'
+import { useEffect } from 'react'
 import { useStore } from '../store'
-import type { SessionState } from '../types/sessionState'
+import { startSocketController } from './socketController'
 
 /**
- * Owns the one WebSocket and feeds the store.
+ * Wires the one WebSocket to the store.
  *
- * Reconnects with capped exponential backoff, because on a race Friday the
- * laptop may sleep, wifi may drop, or the backend may be restarted mid-session
- * and the page has to come back without a manual refresh.
+ * The lifecycle lives in `socketController.ts`; this hook only starts it on
+ * mount and disposes it on unmount. Under React StrictMode the effect runs
+ * twice (mount, unmount, mount): the first controller is disposed before the
+ * second starts, so exactly one socket survives and no timer leaks.
  */
 
-const RECONNECT_BASE_MS = 500
-const RECONNECT_MAX_MS = 10_000
+const TOKEN_STORAGE_KEY = 'f1dash.wsToken'
 
-function socketUrl(): string {
+/** Optional shared secret, if the backend has WS_AUTH_TOKEN set. */
+function accessToken(): string | null {
+  const fromBuild = import.meta.env.VITE_WS_TOKEN as string | undefined
+  if (fromBuild) return fromBuild
+  try {
+    return window.localStorage.getItem(TOKEN_STORAGE_KEY)
+  } catch {
+    return null
+  }
+}
+
+export function socketUrl(): string {
   const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
-  return `${protocol}//${window.location.host}/ws`
+  const token = accessToken()
+  const query = token ? `?token=${encodeURIComponent(token)}` : ''
+  return `${protocol}//${window.location.host}/ws${query}`
 }
 
 export function useSessionSocket(): void {
-  const socketRef = useRef<WebSocket | null>(null)
-  const timerRef = useRef<number | null>(null)
-  const attemptsRef = useRef(0)
-  const closedByUsRef = useRef(false)
-
   useEffect(() => {
-    const { applySnapshot, setStatus, setReconnectAttempts } = useStore.getState()
-    closedByUsRef.current = false
-
-    const connect = () => {
-      if (useStore.getState().status !== 'open') setStatus('connecting')
-      const socket = new WebSocket(socketUrl())
-      socketRef.current = socket
-
-      socket.onopen = () => {
-        attemptsRef.current = 0
-        setReconnectAttempts(0)
-        setStatus('open')
-      }
-
-      socket.onmessage = (event: MessageEvent<string>) => {
-        try {
-          applySnapshot(JSON.parse(event.data) as SessionState)
-        } catch {
-          // A malformed frame must not kill the socket; the next may be fine.
-          console.warn('discarded unparseable frame')
-        }
-      }
-
-      socket.onclose = () => {
-        socketRef.current = null
-        if (closedByUsRef.current) return
-
-        setStatus('closed')
-        const attempt = attemptsRef.current + 1
-        attemptsRef.current = attempt
-        setReconnectAttempts(attempt)
-
-        const delay = Math.min(RECONNECT_BASE_MS * 2 ** (attempt - 1), RECONNECT_MAX_MS)
-        timerRef.current = window.setTimeout(connect, delay)
-      }
-    }
-
-    connect()
-
-    return () => {
-      closedByUsRef.current = true
-      if (timerRef.current !== null) window.clearTimeout(timerRef.current)
-      socketRef.current?.close()
-    }
+    const { applyFrame, setStatus, setReconnectAttempts } = useStore.getState()
+    return startSocketController({
+      url: socketUrl(),
+      onFrame: (text) => {
+        applyFrame(text)
+      },
+      onStatus: setStatus,
+      onAttempts: setReconnectAttempts,
+    })
   }, [])
 }

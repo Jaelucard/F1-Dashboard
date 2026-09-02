@@ -26,6 +26,7 @@ import threading
 import time
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
+from typing import Literal
 
 import httpx
 
@@ -45,8 +46,19 @@ DEFAULT_MAX_ATTEMPTS = 6
 REQUEST_TIMEOUT_SECONDS = 20.0
 
 
+AuthErrorKind = Literal["credentials", "network", "server", "malformed", "config", "unknown"]
+
+
 class AuthError(RuntimeError):
-    """Token acquisition failed. Message never contains a credential."""
+    """Token acquisition failed. Message never contains a credential.
+
+    ``kind`` lets the recorder tell "the password is wrong" (retrying will not
+    help; the operator must act) from "the endpoint is down" (retrying will).
+    """
+
+    def __init__(self, message: str, *, kind: AuthErrorKind = "unknown") -> None:
+        super().__init__(message)
+        self.kind: AuthErrorKind = kind
 
 
 @dataclass(repr=False)
@@ -151,11 +163,13 @@ class TokenProvider:
         self._settings.require_credentials()
 
         last_error: str = "no attempt made"
+        last_kind: AuthErrorKind = "unknown"
         for attempt in range(1, self._max_attempts + 1):
             try:
                 return self._fetch_once()
             except AuthError as exc:
                 last_error = str(exc)
+                last_kind = exc.kind
                 if attempt == self._max_attempts:
                     break
                 delay = min(RETRY_BASE_SECONDS * 2 ** (attempt - 1), RETRY_MAX_SECONDS)
@@ -170,7 +184,8 @@ class TokenProvider:
 
         raise AuthError(
             f"could not obtain an OpenF1 token after {self._max_attempts} attempts: "
-            f"{last_error}"
+            f"{last_error}",
+            kind=last_kind,
         )
 
     def _fetch_once(self) -> Token:
@@ -187,24 +202,28 @@ class TokenProvider:
         except httpx.HTTPError as exc:
             # Stringify the exception type, not the exception: httpx puts the
             # request URL in some messages, and we never want a body echoed.
-            raise AuthError(f"network error contacting the token endpoint ({type(exc).__name__})") from exc
+            raise AuthError(
+                f"network error contacting the token endpoint ({type(exc).__name__})",
+                kind="network",
+            ) from exc
 
         if response.status_code in (400, 401, 403):
             raise AuthError(
                 f"token endpoint rejected the credentials (HTTP {response.status_code}). "
-                f"Check OPENF1_USERNAME and OPENF1_PASSWORD in backend/.env."
+                f"Check OPENF1_USERNAME and OPENF1_PASSWORD in backend/.env.",
+                kind="credentials",
             )
         if response.status_code >= 400:
-            raise AuthError(f"token endpoint returned HTTP {response.status_code}")
+            raise AuthError(f"token endpoint returned HTTP {response.status_code}", kind="server")
 
         try:
             body = response.json()
         except ValueError as exc:
-            raise AuthError("token endpoint returned a non-JSON body") from exc
+            raise AuthError("token endpoint returned a non-JSON body", kind="malformed") from exc
 
         access_token = body.get("access_token")
         if not isinstance(access_token, str) or not access_token:
-            raise AuthError("token endpoint response had no access_token")
+            raise AuthError("token endpoint response had no access_token", kind="malformed")
 
         expires_in = body.get("expires_in", 3600)
         try:

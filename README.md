@@ -61,13 +61,14 @@ the frontend.
 
 Useful endpoints:
 
-- `GET http://127.0.0.1:8000/health` - status, live mode, whether credentials loaded
+- `GET http://127.0.0.1:8000/health` - liveness plus `status`, `ready`, `problems`, feed state, recorder health
+- `GET http://127.0.0.1:8000/ready` - readiness: 200 when the backend can do what it was configured for, 503 otherwise
 - `GET http://127.0.0.1:8000/docs` - generated OpenAPI docs
 - `ws://127.0.0.1:8000/ws` - the single snapshot stream the UI consumes
 
 ```bash
 make demo           # synthetic 22-car grid, connects to nothing
-make test           # backend (105) + frontend (42) test suites
+make test           # backend (217) + frontend (103) test suites
 make types          # regenerate the TypeScript types and test fixture
 make lint           # oxlint + tsc -b
 ```
@@ -88,9 +89,20 @@ MQTT ──> recorder.py ──> recordings/<session_key>/<topic>.jsonl   (disk 
 ```
 
 The recorder writes every message to disk *before* handing it to the live
-adapter, and the adapter's exceptions are caught on the recorder's side. So a
-bug in the merge logic can break the leaderboard but can never cost a recording.
-The adapter subscribes in-process rather than opening a second MQTT connection.
+adapter. The hand-off is a bounded queue drained by its own thread, so the
+adapter never runs on paho's network thread: a slow adapter can lose *queue*
+messages (counted as `fanout_dropped` in `/health`) but can neither stall the
+MQTT loop nor cost the recording a message. The adapter's exceptions are caught
+on the recorder's side, so a bug in the merge logic can break the leaderboard
+but can never cost a recording. The adapter subscribes in-process rather than
+opening a second MQTT connection.
+
+`ws.py` runs one broadcaster: one snapshot is built and serialised per tick and
+handed to every browser. Each browser has a one-slot mailbox (latest wins), a
+send that takes longer than `WS_SEND_TIMEOUT_SECONDS` drops that browser, and
+`WS_MAX_CLIENTS` caps how many can connect. If building a snapshot fails, the
+last good one is re-sent with `degraded: true` and the reason, rather than a
+blank idle frame that would look like the session had ended.
 
 ### One shared type
 
@@ -123,7 +135,39 @@ the same topic is an **update to the same record**, which happens routinely on
 rather than replacing, so a revision carrying only sector 2 does not blank
 sector 1. Where two messages share a `_key`, the higher `_id` wins, so an
 out-of-order delivery cannot overwrite fresh data with stale data. Payloads
-without a `_key` (all the REST ones) fall back to a natural key per topic.
+without a `_key` (all the REST ones) fall back to a natural key per topic. A
+record that lacks the fields its natural key is built from (a lap with no
+driver number, say) is **quarantined and counted**, never merged into a shared
+`None:None` bucket.
+
+The exception is telemetry. `position`, `intervals`, `location` and `car_data`
+carry a fresh `_key` on every message, so keying them by `_key` would retain the
+whole race in memory. They are keyed by driver instead: the latest sample per
+driver drives the leaderboard, `location` and `car_data` keep a short ring
+buffer per driver for the track map, and the full history lives in the
+recording on disk. Every other store has a hard cap as well, so memory and
+snapshot time stay flat however long the session runs.
+
+### Scoped by session
+
+Every payload carries `session_key`, and the adapter keeps a separate bucket
+per session. Only the **active** session is rendered: the highest `session_key`
+that has produced *timing* data. A `v1/sessions` or `v1/drivers` announcement
+for a later session is stored but does not switch the board, because OpenF1 can
+publish the weekend's schedule before a session starts. A late message from an
+older session goes to that session's bucket (or is dropped once the bucket has
+been evicted) and is counted as `late_session_messages`; it can never appear on
+the new session's board. The last two sessions are retained.
+
+### Validated before merging
+
+Each topic has a small schema. Wrong-typed fields are dropped from the record
+and counted (`malformed_fields`); records missing their identity are rejected
+and counted (`quarantined_records`); telemetry samples that carry no data
+after stripping are rejected rather than blanking a good reading. Race control
+is ordered by parsed UTC time with `_id` as the tie-breaker, and a record with
+an unparseable date can never become "the latest". All of this is reported in
+the `adapter` block of every snapshot and under `source` in `/health`.
 
 ## What the supporter account unlocks
 
@@ -159,7 +203,11 @@ WebSocket layer, or the frontend can stop it. `make dev` runs the same recorder
 inside the FastAPI process; from Phase 2 the live adapter subscribes to it
 in-process rather than opening a second connection, as the OpenF1 docs ask.
 
-Set `LIVE_MODE=true` in `backend/.env` first, or the backend will not connect.
+Set `LIVE_MODE=true` in `backend/.env` first. With it false, **neither** path
+connects: `make dev` starts idle, and `make record` exits with code 2 before
+requesting a token. To record deliberately with the flag off, pass
+`--force-live` (`.venv/bin/python -m app.recorder --force-live`) or set
+`RECORDER_FORCE_LIVE=1`.
 
 Output lands in `recordings/<session_key>/<topic>.jsonl`, one JSON object per
 line:
@@ -178,13 +226,51 @@ immediately, so you can `tail -f` a file while a session is running.
 
 ```bash
 curl -s localhost:8000/health | python3 -m json.tool     # with make dev
+curl -si localhost:8000/ready | head -1                   # 200 or 503
 ```
 
-The `recorder` block reports `connected`, `messages_recorded`, per-topic counts,
-`last_message_at`, `session_keys` and `token_expires_at`. Outside a session
-window a healthy recorder shows `connected: true` with `messages_recorded: 0`
-and logs `connected, subscribed to '#' - waiting for messages`. That is not a
+`/health` always answers 200 - that is the liveness signal - but it does not
+always say `ok`. `status` is `ok`, `degraded` or `error`, `ready` says whether
+the backend can currently do what it was configured for, and `problems` lists
+what is wrong in plain words. `/ready` turns the same evaluation into a status
+code. Live mode with missing credentials, a rejected token, or failing writes
+is an `error` and not ready; a stale feed, low disk, dropped fan-out messages
+or a possibly incomplete recording is `degraded`.
+
+The `recorder` block reports `connected`, `auth_state`, `messages_recorded`,
+per-topic counts, `last_message_at`, `session_keys`, `token_expires_at`,
+`recording_ok` / `write_failures` / `recording_error`, `disk_free_bytes` /
+`disk_low`, the fan-out queue, and `id_tracking`. Outside a session window a
+healthy recorder shows `connected: true` with `messages_recorded: 0` and logs
+`connected, subscribed to '#' at QoS 1 - waiting for messages`. That is not a
 fault; the broker is simply quiet.
+
+The `feed` block (also on every snapshot) separates the things a LIVE badge
+used to conflate: `mqtt_connected`, `authenticated`, `last_message_at`,
+`data_age_seconds` (from the recorder, not the WebSocket push), and a single
+`state`: `offline`, `connecting`, `auth_failed`, `connected` (up, nothing yet),
+`live`, or `stale` (no message for `FEED_STALE_SECONDS`, default 15). The UI
+shows LIVE only for `live` in live mode with the socket open; a synthetic grid
+shows DEMO, and everything else is named for what is actually wrong.
+
+### Is the recording complete?
+
+The recorder never claims more than it knows. `may_be_incomplete` becomes true
+- and stays true - after any write failure, any disconnect after data had
+started flowing, or a gap in OpenF1's `_id` sequence. `id_tracking` reports
+per-topic and global `min_id` / `max_id` / `count` / `duplicates` /
+`out_of_order` / `missing`. OpenF1 documents `_id` as increasing but not
+whether the sequence is per topic or shared; both models are computed and the
+one whose arithmetic is consistent is used for `messages_possibly_lost`. Treat
+it as a heuristic until the Monza FP1 recording confirms which it is.
+
+Writes are classified: `disk_full` (ENOSPC), `permission` (EACCES/EPERM, a
+read-only volume, or a failed `mkdir`) or `io`, at the `mkdir`, `open`, `write`
+or `flush` stage. The first failure of a burst is logged at ERROR (then every
+thousandth, so a full disk cannot also fill the log), the message still fans
+out to the dashboard, the file handle is discarded so the next write retries
+from scratch, and recovery is logged. Recording continues on a low disk: the
+capture is the artefact, and stopping early loses more than it saves.
 
 ### Disk space
 
@@ -198,9 +284,31 @@ have the room before FP1.
 The OAuth2 token *is* the MQTT password and lasts one hour. Rather than waiting
 to be disconnected by the broker at an unpredictable moment, the recorder
 reconnects deliberately five minutes before expiry, while the current token is
-still valid. Unexpected drops are handled by paho's automatic reconnect, and a
-refused connection forces a fresh token. Files are appended to throughout, so a
-reconnect is invisible in the recording.
+still valid. Unexpected drops are handled by paho's automatic reconnect. A
+refused connection (`not authorized`) *signals* the supervisor thread, which
+tears the connection down and fetches a fresh token; the paho callback itself
+never does HTTP, because a blocking retry loop on the network thread would
+stall it. Token failures are classified (`credentials`, `network`, `server`,
+`malformed`) and reported as `auth_state` / `last_error_kind` without ever
+including a token or password. Files are appended to throughout, so a reconnect
+is invisible in the recording - but it is counted, and the recording is marked
+possibly incomplete if data had already been flowing.
+
+The subscription uses QoS 1 (`MQTT_QOS`), so the broker retransmits anything
+unacknowledged across a brief drop; the adapter is idempotent (same `_key`,
+same `_id`) so a redelivery is harmless, and the recording keeps both copies
+for replay to reconcile by `_id`.
+
+### WebSocket access control
+
+`/ws` checks the `Origin` header before completing the handshake (a browser
+always sends one) against `WS_ALLOWED_ORIGINS`; anything else is refused with a
+403. Requests with no `Origin` (curl, websocat) are allowed unless
+`WS_REQUIRE_ORIGIN=true`. Setting `WS_AUTH_TOKEN` requires `?token=<value>` or
+`Authorization: Bearer <value>`; the browser reads the value from
+`VITE_WS_TOKEN` at build time or from `localStorage['f1dash.wsToken']`.
+`WS_MAX_CLIENTS` (default 16) caps connections. Refusals are counted under
+`websocket.rejected` in `/health`, and the token never appears there.
 
 ## Replaying a session
 
@@ -244,13 +352,15 @@ will be removed rather than left permanently empty.
 backend/
   app/
     config.py        settings + credential handling
-    main.py          FastAPI app, /health, /ws
-    ws.py            WebSocket fan-out to browsers
+    main.py          FastAPI app, /health, /ready, /ws
+    feed.py          feed state + health evaluation (pure functions)
+    ws.py            WebSocket broadcaster, access control, slow-client drop
     adapters/        (Phase 2+) live / replay / historical data sources
   tests/
 frontend/
   src/
-    lib/             WebSocket hook, data-age counter, shared types
+    lib/             socketController (lifecycle), validateSnapshot (runtime
+                     checks), status (badge logic), format, shared types
     components/      (Phase 2+) Leaderboard, StatusStrip, ...
 recordings/          raw .jsonl captures, gitignored
 ```

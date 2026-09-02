@@ -124,7 +124,8 @@ class DriverState(Base):
 
 
 class RecorderInfo(Base):
-    """Feed health, so the UI can show whether data is actually arriving."""
+    """Recorder health, so the UI can show whether data is actually arriving
+    and whether the on-disk capture can still be trusted."""
 
     connected: bool = False
     messages_recorded: int = 0
@@ -132,6 +133,67 @@ class RecorderInfo(Base):
     topics: dict[str, int] = Field(default_factory=dict)
     token_expires_at: str | None = None
     last_error: str | None = None
+
+    recording_ok: bool = True
+    """False while writes to the recordings directory are failing."""
+    write_failures: int = 0
+    fanout_dropped: int = 0
+    """Messages recorded to disk but dropped from the in-process fan-out queue
+    because the live adapter could not keep up. The recording is unaffected."""
+    messages_possibly_lost: int = 0
+    """Estimated from gaps in OpenF1's ``_id`` sequence. Heuristic: see README."""
+    may_be_incomplete: bool = False
+    """True once anything may have been lost: a write failure, a disconnect
+    after data had started flowing, or an ``_id`` gap. Never reset."""
+    disk_free_bytes: int | None = None
+    disk_low: bool = False
+
+
+FeedState = Literal["offline", "connecting", "auth_failed", "connected", "live", "stale"]
+"""Upstream feed state, distinct from whether this backend process is up.
+
+offline      no recorder running (LIVE_MODE off, or it failed to start)
+connecting   recorder running, MQTT not (yet) connected
+auth_failed  the broker or token endpoint rejected the credentials
+connected    MQTT up but no message has ever arrived (quiet outside a session)
+live         MQTT up and a message arrived within ``stale_after_seconds``
+stale        data had been arriving but has stopped, or MQTT dropped after data
+"""
+
+
+class FeedInfo(Base):
+    """Separates "the socket is open" from "data is actually arriving".
+
+    A LIVE badge must mean all of: browser socket open, MQTT connected,
+    authenticated, and a message received recently. Any one of those failing
+    is a different problem with a different fix, so each is reported.
+    """
+
+    state: FeedState
+    mqtt_connected: bool = False
+    authenticated: bool = False
+    last_message_at: str | None = None
+    data_age_seconds: float | None = None
+    """Seconds since the recorder last received any message. Null before the first."""
+    stale_after_seconds: float
+    recording_ok: bool = True
+    last_error: str | None = None
+
+
+class AdapterInfo(Base):
+    """What the live adapter did with the stream: scoping, validation, drops."""
+
+    active_session_key: int | None = None
+    sessions_retained: list[int] = Field(default_factory=list)
+    messages_seen: int = 0
+    quarantined_records: int = 0
+    """Records rejected outright: not a dict, or missing an identity field."""
+    malformed_fields: int = 0
+    """Fields dropped from otherwise valid records for having the wrong type."""
+    late_session_messages: int = 0
+    """Messages for a session older than the active one. Never shown."""
+    session_switches: int = 0
+    driver_build_errors: int = 0
 
 
 class SessionState(Base):
@@ -156,3 +218,10 @@ class SessionState(Base):
 
     race_control: list[RaceControlMessage] = Field(default_factory=list)
     recorder: RecorderInfo | None = None
+    feed: FeedInfo | None = None
+    adapter: AdapterInfo | None = None
+
+    degraded: bool = False
+    """True when this frame is a re-send of the last good snapshot (or an empty
+    one) because building a fresh snapshot failed. See ``degraded_reason``."""
+    degraded_reason: str | None = None

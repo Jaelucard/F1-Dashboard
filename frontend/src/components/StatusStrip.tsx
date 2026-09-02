@@ -1,15 +1,20 @@
 import { useEffect, useState } from 'react'
 import { useStore } from '../store'
 import { formatDataAge, formatSessionClock, NO_DATA } from '../lib/format'
+import { feedBadge, SOCKET_STALE_SECONDS, type BadgeTone } from '../lib/status'
 
 /**
  * The top strip: what session, how far into it, what flag, and - the part that
- * matters most on a race Friday - how long since data last arrived.
+ * matters most on a race Friday - whether data is actually arriving.
  *
- * The data-age counter is the single clearest signal that the feed is alive.
- * The backend pushes a snapshot every second whether or not anything changed,
- * so this should sit at 0-1s. Anything above a few seconds means the socket,
- * the backend, or the MQTT connection is in trouble.
+ * Two ages are shown because they answer different questions:
+ *
+ *   Data age  seconds since this browser received a frame. The backend pushes
+ *             every second whether or not anything changed, so this sits at
+ *             0-1s; more means the socket or the backend is in trouble.
+ *   Feed age  seconds since the *backend* received an MQTT message, as
+ *             reported by the recorder. This is what says whether OpenF1 is
+ *             sending anything. It is what makes the LIVE badge honest.
  */
 
 const FLAG_STYLES: Record<string, string> = {
@@ -22,7 +27,15 @@ const FLAG_STYLES: Record<string, string> = {
   'BLACK AND WHITE': 'bg-white text-black',
 }
 
-/** Ticks once a second so the clock and the age counter advance. */
+const BADGE_STYLES: Record<BadgeTone, string> = {
+  live: 'bg-f1-red text-white',
+  demo: 'bg-timing-slower text-black',
+  warn: 'bg-f1-line text-timing-slower',
+  bad: 'bg-f1-line text-f1-red',
+  idle: 'bg-f1-line text-f1-muted',
+}
+
+/** Ticks once a second so the clock and the age counters advance. */
 function useSecondTick(): number {
   const [now, setNow] = useState(() => Date.now())
   useEffect(() => {
@@ -40,16 +53,29 @@ export function StatusStrip() {
 
   const session = snapshot?.session ?? null
   const recorder = snapshot?.recorder ?? null
+  const feed = snapshot?.feed ?? null
 
   const dataAgeSeconds =
     lastMessageAt === null ? null : Math.max(0, Math.floor((now - lastMessageAt) / 1000))
+  const socketStale = dataAgeSeconds !== null && dataAgeSeconds >= SOCKET_STALE_SECONDS
 
-  // Stale once we have missed several pushes in a row.
-  const stale = dataAgeSeconds !== null && dataAgeSeconds >= 5
-  const live = status === 'open' && snapshot?.mode === 'live'
+  // Upstream age: what the recorder reported, plus the time since that frame.
+  const feedAgeSeconds =
+    feed?.data_age_seconds === null || feed?.data_age_seconds === undefined
+      ? null
+      : Math.floor(feed.data_age_seconds + (dataAgeSeconds ?? 0))
+  const feedStale =
+    feedAgeSeconds !== null && feed !== null && feedAgeSeconds > feed.stale_after_seconds
+
+  const badge = feedBadge({ status, snapshot, dataAgeSeconds })
 
   const flag = snapshot?.track_flag ?? null
   const flagStyle = flag ? (FLAG_STYLES[flag] ?? 'bg-f1-line text-f1-text') : null
+
+  const problem =
+    snapshot?.degraded && snapshot.degraded_reason
+      ? snapshot.degraded_reason
+      : feed?.last_error ?? null
 
   return (
     <header className="flex flex-wrap items-center gap-x-6 gap-y-2 border-b border-f1-line bg-f1-panel px-4 py-2.5 md:px-6">
@@ -82,6 +108,15 @@ export function StatusStrip() {
         </span>
       )}
 
+      {feed && !feed.recording_ok && (
+        <span
+          className="rounded border border-f1-red px-2 py-0.5 text-xs font-bold text-f1-red"
+          title={feed.last_error ?? 'Writes to the recordings directory are failing'}
+        >
+          RECORDING FAILED
+        </span>
+      )}
+
       <div className="ml-auto flex items-center gap-4">
         {snapshot?.session_status && (
           <span className="hidden text-xs text-f1-muted lg:inline">{snapshot.session_status}</span>
@@ -90,33 +125,45 @@ export function StatusStrip() {
         <Field
           label="Data age"
           value={formatDataAge(dataAgeSeconds)}
-          tone={stale ? 'bad' : 'good'}
+          tone={socketStale ? 'bad' : 'good'}
+          title="Seconds since this browser last received a frame from the backend"
         />
+
+        {feed && (
+          <Field
+            label="Feed age"
+            value={formatDataAge(feedAgeSeconds)}
+            tone={feedStale || feed.state === 'stale' ? 'bad' : feed.state === 'live' ? 'good' : undefined}
+            title="Seconds since the backend last received a message from OpenF1"
+          />
+        )}
 
         {recorder && (
           <Field
             label="Recorded"
             value={recorder.messages_recorded.toLocaleString()}
-            title={
-              recorder.token_expires_at
-                ? `Token expires ${recorder.token_expires_at}`
-                : undefined
-            }
+            tone={recorder.recording_ok ? undefined : 'bad'}
+            title={[
+              recorder.token_expires_at ? `Token expires ${recorder.token_expires_at}` : null,
+              recorder.may_be_incomplete ? 'Recording may be incomplete' : null,
+              recorder.disk_low ? 'Disk space is low' : null,
+            ]
+              .filter(Boolean)
+              .join(' · ') || undefined}
           />
         )}
 
         <span
-          className={`flex items-center gap-1.5 rounded px-2 py-1 text-xs font-bold tracking-wide ${
-            live ? 'bg-f1-red text-white' : 'bg-f1-line text-f1-muted'
-          }`}
+          className={`flex items-center gap-1.5 rounded px-2 py-1 text-xs font-bold tracking-wide ${BADGE_STYLES[badge.tone]}`}
+          title={problem ?? undefined}
         >
           <span
             className={`h-2 w-2 rounded-full ${
               status === 'open' ? 'bg-white' : 'bg-f1-muted'
-            } ${live ? 'animate-pulse' : ''}`}
+            } ${badge.pulse ? 'animate-pulse' : ''}`}
             aria-hidden
           />
-          {live ? 'LIVE' : status === 'open' ? (snapshot?.mode ?? 'IDLE').toUpperCase() : 'OFFLINE'}
+          {badge.label}
         </span>
       </div>
     </header>

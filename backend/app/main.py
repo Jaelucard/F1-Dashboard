@@ -10,14 +10,17 @@ import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
+from typing import Any
 
 from fastapi import FastAPI, WebSocket
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 
 from app import PHASE, ws
 from app.adapters.openf1_live import OpenF1LiveSource
 from app.config import get_settings
-from app.models import RecorderInfo, SessionState
+from app.feed import compute_feed, evaluate_health
+from app.models import FeedInfo, RecorderInfo, SessionState
 from app.recorder import RawRecorder
 
 logging.basicConfig(
@@ -107,7 +110,8 @@ app = FastAPI(
 )
 
 # The Vite dev server runs on a different origin, so the browser needs this for
-# the /health fetch. The WebSocket handshake is not subject to CORS.
+# the /health fetch. The WebSocket handshake is not subject to CORS; ws.py
+# checks Origin itself.
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["http://localhost:5173", "http://127.0.0.1:5173"],
@@ -116,36 +120,99 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+
+def _current_recorder() -> RawRecorder | None:
+    return getattr(app.state, "recorder", None)
+
+
+def _current_source() -> OpenF1LiveSource | None:
+    return getattr(app.state, "source", None)
+
+
+def _is_demo() -> bool:
+    return bool(getattr(app.state, "demo", False))
+
+
+def _evaluate() -> dict[str, Any]:
+    """Everything /health, /ready and the snapshot share about backend state."""
+    settings = get_settings()
+    recorder = _current_recorder()
+    health = recorder.health() if recorder is not None else None
+    # A running recorder means live data is expected, whatever the flag says.
+    live = (settings.live_mode or recorder is not None) and not _is_demo()
+    feed: FeedInfo | None = None
+    if live:
+        feed = compute_feed(health, stale_after=settings.feed_stale_seconds)
+    status, ready, problems = evaluate_health(
+        live_mode=live,
+        demo_mode=_is_demo(),
+        # start() refuses without credentials, so a running recorder had them.
+        credentials_present=settings.credentials_present or recorder is not None,
+        recorder=health,
+        feed=feed,
+    )
+    return {
+        "status": status,
+        "ready": ready,
+        "problems": problems,
+        "recorder_health": health,
+        "feed": feed,
+    }
+
+
 @app.get("/health")
 async def health() -> dict[str, object]:
-    """Everything needed to answer "is it working?" without reading the logs."""
+    """Liveness plus everything needed to answer "is it working?" without the logs.
+
+    Always 200: this process answering *is* the liveness signal. ``status`` and
+    ``problems`` say whether it is actually doing its job; ``/ready`` turns the
+    same evaluation into a status code for anything that polls.
+    """
     settings = get_settings()
-    recorder: RawRecorder | None = getattr(app.state, "recorder", None)
+    evaluated = _evaluate()
+    source = _current_source()
+    feed = evaluated["feed"]
     return {
-        "status": "ok",
+        "status": evaluated["status"],
+        "ready": evaluated["ready"],
+        "problems": evaluated["problems"],
         "version": app.version,
         "phase": PHASE,
         "live_mode": settings.live_mode,
+        "demo_mode": settings.demo_mode,
         "credentials_present": settings.credentials_present,
         "started_at": STARTED_AT.isoformat(timespec="seconds"),
         "browsers_connected": ws.manager.count,
-        "demo_mode": settings.demo_mode,
-        "recorder": recorder.health() if recorder else None,
-        "source": source.stats() if (source := getattr(app.state, "source", None)) else None,
+        "websocket": ws.manager.stats(),
+        "feed": feed.model_dump() if feed is not None else None,
+        "feed_stale_seconds": settings.feed_stale_seconds,
+        "recorder": evaluated["recorder_health"],
+        "source": source.stats() if source is not None else None,
     }
+
+
+@app.get("/ready")
+async def ready() -> JSONResponse:
+    """503 until the backend can do what it was configured to do."""
+    evaluated = _evaluate()
+    body = {"ready": evaluated["ready"], "status": evaluated["status"], "problems": evaluated["problems"]}
+    return JSONResponse(body, status_code=200 if evaluated["ready"] else 503)
 
 
 def build_snapshot() -> SessionState:
     """Assemble the current SessionState from whichever source is running."""
     settings = get_settings()
-    source: OpenF1LiveSource | None = getattr(app.state, "source", None)
+    source = _current_source()
     if source is None:
         return ws.idle_snapshot(settings.credentials_present)
 
-    recorder: RawRecorder | None = getattr(app.state, "recorder", None)
+    if _is_demo():
+        return source.snapshot(mode="demo")
+
+    recorder = _current_recorder()
     info = None
-    if recorder is not None:
-        health = recorder.health()
+    health = recorder.health() if recorder is not None else None
+    if health is not None:
         info = RecorderInfo(
             connected=health["connected"],
             messages_recorded=health["messages_recorded"],
@@ -153,9 +220,17 @@ def build_snapshot() -> SessionState:
             topics=health["topics"],
             token_expires_at=health["token_expires_at"],
             last_error=health["last_error"],
+            recording_ok=health["recording_ok"],
+            write_failures=health["write_failures"],
+            fanout_dropped=health["fanout_dropped"],
+            messages_possibly_lost=health["messages_possibly_lost"],
+            may_be_incomplete=health["may_be_incomplete"],
+            disk_free_bytes=health["disk_free_bytes"],
+            disk_low=health["disk_low"],
         )
-    mode = "demo" if getattr(app.state, "demo", False) else "live"
-    return source.snapshot(mode=mode, recorder=info)
+    state = source.snapshot(mode="live", recorder=info)
+    state.feed = compute_feed(health, stale_after=settings.feed_stale_seconds)
+    return state
 
 
 @app.websocket("/ws")

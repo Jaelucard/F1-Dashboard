@@ -163,7 +163,8 @@ describe('StatusStrip', () => {
     inject()
     render(<StatusStrip />)
     expect(screen.getByText('Data age')).toBeInTheDocument()
-    expect(screen.getByText('0s')).toBeInTheDocument()
+    // The socket age and the upstream feed age are both fresh in the fixture.
+    expect(screen.getAllByText('0s').length).toBeGreaterThanOrEqual(1)
   })
 
   it('reports OFFLINE when the socket is closed', () => {
