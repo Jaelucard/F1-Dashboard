@@ -2,6 +2,10 @@
 
 from __future__ import annotations
 
+import json
+import logging
+
+import pytest
 from fastapi.testclient import TestClient
 
 from app.main import app
@@ -76,3 +80,24 @@ def test_live_mode_without_credentials_does_not_crash_the_api(
             assert body["recorder"] is None
             assert client.get("/ready").status_code == 503
     get_settings.cache_clear()
+
+
+def test_health_and_startup_logs_never_expose_the_recordings_path(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """The absolute recordings directory is local detail, not public state."""
+    from app.config import get_settings
+
+    recordings_dir = str(get_settings().recordings_dir)
+    assert recordings_dir.startswith("/"), "the fixture gives an absolute temp path"
+
+    with caplog.at_level(logging.INFO):
+        with TestClient(app) as client:
+            body = json.dumps(client.get("/health").json())
+
+    assert recordings_dir not in body
+    assert "recordings_dir" not in body
+    startup = [record.getMessage() for record in caplog.records if record.name == "f1dash"]
+    assert any("recording enabled" in message for message in startup)
+    for record in caplog.records:
+        assert recordings_dir not in record.getMessage()

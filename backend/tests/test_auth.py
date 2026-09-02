@@ -12,9 +12,9 @@ from pydantic import SecretStr
 from app.auth import AuthError, Token, TokenProvider
 from app.config import Settings
 
-USER = "sentinel-user@example.com"
-PASSWORD = "sentinel-password-do-not-log"
-TOKEN_VALUE = "sentinel-access-token-abc123"
+USER = "test-user@example.invalid"
+PASSWORD = "test-password-placeholder"
+TOKEN_VALUE = "test-token-placeholder"
 
 
 def make_settings(**overrides: object) -> Settings:

@@ -1,9 +1,9 @@
 # F1 Timing Dashboard - developer entrypoints
 #
-# Python note: this machine's Homebrew Python 3.14 cannot bootstrap pip
-# (pip 26.2.1's vendored truststore crashes because platform.mac_ver() returns
-# '' on macOS 26). The backend therefore pins Python 3.13. Do NOT run
-# `pip install --upgrade pip` inside the venv - 26.2.1 is the broken version.
+# Python note: the backend is pinned to Python 3.13. Python 3.14 is not yet
+# supported because current pip releases cannot bootstrap inside a 3.14 venv on
+# some platforms. Leave the venv's pip at the version `python -m venv` installs
+# rather than upgrading it; the pinned interpreter is tested as-is.
 
 PYTHON ?= python3.13
 VENV := backend/.venv
@@ -18,6 +18,7 @@ help:
 	@echo "make demo     - run with a synthetic grid, no OpenF1 connection"
 	@echo "make types    - regenerate the TypeScript types and test fixture"
 	@echo "make test     - run backend and frontend test suites"
+	@echo "make lint     - ruff (backend), eslint + tsc (frontend)"
 	@echo "make clean    - remove venv, node_modules and build output"
 
 setup: setup-backend setup-frontend
@@ -75,6 +76,7 @@ test-frontend:
 	cd frontend && npm test
 
 lint:
+	cd backend && .venv/bin/ruff check .
 	cd frontend && npm run lint
 	cd frontend && npx tsc -b
 

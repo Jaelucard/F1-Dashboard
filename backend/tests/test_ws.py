@@ -65,7 +65,7 @@ def test_no_origin_is_allowed_by_default_but_can_be_required(monkeypatch: pytest
 
 
 def test_a_shared_token_gates_the_socket_when_configured(monkeypatch: pytest.MonkeyPatch) -> None:
-    env(monkeypatch, WS_AUTH_TOKEN="sekrit-token")
+    env(monkeypatch, WS_AUTH_TOKEN="test-ws-token-placeholder")
     with TestClient(app) as client:
         with pytest.raises(WebSocketDenialResponse):
             with client.websocket_connect("/ws"):
@@ -73,9 +73,9 @@ def test_a_shared_token_gates_the_socket_when_configured(monkeypatch: pytest.Mon
         with pytest.raises(WebSocketDenialResponse):
             with client.websocket_connect("/ws?token=wrong"):
                 pass
-        with client.websocket_connect("/ws?token=sekrit-token") as socket:
+        with client.websocket_connect("/ws?token=test-ws-token-placeholder") as socket:
             assert socket.receive_json()["type"] == "snapshot"
-        with client.websocket_connect("/ws", headers={"Authorization": "Bearer sekrit-token"}) as socket:
+        with client.websocket_connect("/ws", headers={"Authorization": "Bearer test-ws-token-placeholder"}) as socket:
             assert socket.receive_json()["type"] == "snapshot"
         assert ws.manager.stats()["rejected"]["auth"] >= 2
 
@@ -83,7 +83,7 @@ def test_a_shared_token_gates_the_socket_when_configured(monkeypatch: pytest.Mon
 def test_the_token_never_appears_in_health() -> None:
     with TestClient(app) as client:
         body = json.dumps(client.get("/health").json())
-        assert "sekrit" not in body
+        assert "test-ws-token-placeholder" not in body
 
 
 def test_client_limit_refuses_the_extra_connection(monkeypatch: pytest.MonkeyPatch) -> None:

@@ -22,12 +22,11 @@ The first live test is the Italian Grand Prix at Monza, FP1 on Friday 4 Septembe
 
 ## Requirements
 
-- **Python 3.13.** Not 3.14 on this machine: Homebrew's 3.14 ships a pip whose
-  vendored `truststore` crashes on macOS 26 (`platform.mac_ver()` returns `''`),
-  so `python3.14 -m venv` cannot bootstrap pip at all. For the same reason, do
-  **not** run `pip install --upgrade pip` inside the venv - the suggested
-  26.2.1 is the broken version. 25.1.1 works.
-- **Node 20+** (developed on Node 26).
+- **Python 3.13.** The backend is pinned to 3.13 (`PYTHON` in the Makefile).
+  Python 3.14 is not yet supported: current pip releases cannot bootstrap
+  inside a 3.14 venv on some platforms, so leave the venv's pip at the version
+  `python -m venv` installs rather than upgrading it.
+- **Node.js 20 or newer.**
 
 ## Setup
 
@@ -70,7 +69,7 @@ Useful endpoints:
 make demo           # synthetic 22-car grid, connects to nothing
 make test           # backend (217) + frontend (103) test suites
 make types          # regenerate the TypeScript types and test fixture
-make lint           # oxlint + tsc -b
+make lint           # ruff (backend), oxlint + tsc -b (frontend)
 ```
 
 ### Seeing it work outside a session window

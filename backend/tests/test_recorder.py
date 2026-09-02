@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import re
 import threading
 from datetime import datetime, timedelta, timezone
@@ -29,8 +30,8 @@ ISO_WITH_MILLIS = re.compile(
 def make_settings(tmp_path: Path) -> Settings:
     return Settings(
         _env_file=None,  # type: ignore[call-arg]
-        openf1_username=SecretStr("user@example.com"),
-        openf1_password=SecretStr("password"),
+        openf1_username=SecretStr("test-user@example.invalid"),
+        openf1_password=SecretStr("test-password-placeholder"),
         live_mode=True,
         recordings_dir=tmp_path,
     )
@@ -40,14 +41,14 @@ class FakeTokenProvider:
     """Stands in for TokenProvider without touching the network."""
 
     def __init__(self, *, lifetime: float = 3600.0) -> None:
-        self.username = "user@example.com"
+        self.username = "test-user@example.invalid"
         self.calls: list[bool] = []
         self.lifetime = lifetime
         self.current_expiry = datetime.now(timezone.utc) + timedelta(seconds=lifetime)
 
     def get_token(self, *, force_refresh: bool = False) -> str:
         self.calls.append(force_refresh)
-        return f"token-{len(self.calls)}"
+        return f"test-token-placeholder-{len(self.calls)}"
 
     def seconds_until_refresh(self) -> float:
         return self.lifetime
@@ -313,8 +314,8 @@ def test_connects_authenticates_and_subscribes_to_everything(tmp_path: Path) -> 
     recorder.stop(timeout=5)
 
     assert client.connected_to == ("mqtt.openf1.org", 8883)
-    assert client.username == "user@example.com"
-    assert client.password == "token-1", "the MQTT password is the access token"
+    assert client.username == "test-user@example.invalid"
+    assert client.password == "test-token-placeholder-1", "the MQTT password is the access token"
     # QoS 1 by default (settings.mqtt_qos): the broker retransmits across a
     # brief drop, and the adapter is idempotent so a redelivery is harmless.
     assert client.subscriptions == [("#", 1)]
@@ -397,6 +398,29 @@ def test_health_reports_what_friday_needs(tmp_path: Path) -> None:
     assert "token_expires_at" in health
 
 
+def test_health_and_logs_never_expose_the_recordings_path(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    """/health is public and logs get pasted into bug reports: neither may
+    carry the absolute location of the recordings directory."""
+    recorder, _ = make_recorder(tmp_path)
+    with caplog.at_level(logging.DEBUG, logger="app.recorder"):
+        recorder.handle_payload("v1/laps", json.dumps({"session_key": 42}))
+        recorder.handle_payload("v1/location", json.dumps({"session_key": 42}))
+    health = recorder.health()
+
+    assert "recordings_dir" not in health
+    assert health["recordings_configured"] is True
+    assert str(tmp_path) not in json.dumps(health)
+
+    messages = [record.getMessage() for record in caplog.records]
+    assert any("recording to" in message for message in messages), "the write must still be logged"
+    for message in messages:
+        assert str(tmp_path) not in message
+    # The write itself still happened where it was told to.
+    assert (tmp_path / "42" / "v1_laps.jsonl").exists() or any(tmp_path.rglob("*.jsonl"))
+
+
 def test_starting_twice_is_an_error(tmp_path: Path) -> None:
     client = FakeClient()
     recorder, _ = make_recorder(tmp_path, client_factory=lambda: client)
@@ -442,7 +466,7 @@ def test_token_rotation_reconnects_with_a_fresh_token(tmp_path: Path) -> None:
     recorder.stop(timeout=5)
 
     first_three = clients[:3]
-    assert [c.password for c in first_three] == ["token-1", "token-2", "token-3"]
+    assert [c.password for c in first_three] == ["test-token-placeholder-1", "test-token-placeholder-2", "test-token-placeholder-3"]
     assert all(c.subscriptions == [("#", 1)] for c in first_three)
     assert all(c.disconnected for c in first_three), "old connections are torn down"
 

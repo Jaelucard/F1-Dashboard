@@ -1,0 +1,9 @@
+# Lightweight lint for the backend: `make lint` or `.venv/bin/ruff check .`
+# Deliberately close to ruff's defaults (pyflakes + the pycodestyle error
+# subset). Not a formatter, and no style rules that would churn the codebase.
+target-version = "py313"
+line-length = 120
+extend-exclude = [".venv"]
+
+[lint]
+select = ["E4", "E7", "E9", "F"]

@@ -29,13 +29,13 @@ pytestmark = pytest.mark.filterwarnings("ignore::DeprecationWarning")
 
 
 class FakeTokenProvider:
-    username = "user@example.com"
+    username = "test-user@example.invalid"
 
     def __init__(self) -> None:
         self.current_expiry = datetime.now(timezone.utc) + timedelta(hours=1)
 
     def get_token(self, *, force_refresh: bool = False) -> str:
-        return "token"
+        return "test-token-placeholder"
 
     def seconds_until_refresh(self) -> float:
         return 3600.0
@@ -90,8 +90,8 @@ def pipeline(tmp_path: Path) -> Any:
     """A started recorder + adapter wired exactly as main.lifespan wires them."""
     settings = Settings(
         _env_file=None,  # type: ignore[call-arg]
-        openf1_username=SecretStr("user@example.com"),
-        openf1_password=SecretStr("password"),
+        openf1_username=SecretStr("test-user@example.invalid"),
+        openf1_password=SecretStr("test-password-placeholder"),
         live_mode=True,
         recordings_dir=tmp_path,
         feed_stale_seconds=2.0,

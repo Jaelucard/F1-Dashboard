@@ -305,7 +305,9 @@ class JsonlWriter:
                 except OSError as exc:
                     raise classify_os_error(exc, "open") from exc
                 self._handles[key] = handle
-                log.info("recording to %s", path)
+                # Relative to the recordings root on purpose: the absolute
+                # location of the capture is not something the logs need.
+                log.info("recording to %s/%s.jsonl", session_key, topic)
             try:
                 handle.write(line)
                 handle.write("\n")
@@ -880,7 +882,9 @@ class RawRecorder:
         free = self._writer.disk_free_bytes()
         data["disk_free_bytes"] = free
         data["disk_low"] = free is not None and free < self._settings.recorder_min_free_bytes
-        data["recordings_dir"] = str(self._settings.recordings_dir)
+        # A flag, never the path: /health is public and the absolute
+        # location of the recordings is nobody else's business.
+        data["recordings_configured"] = True
         return data
 
 

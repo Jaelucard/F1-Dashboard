@@ -25,6 +25,22 @@ BACKEND_DIR = Path(__file__).resolve().parent.parent
 REPO_ROOT = BACKEND_DIR.parent
 
 
+def describe_recordings_dir(path: Path) -> str:
+    """A loggable description of ``recordings_dir`` that never reveals an
+    absolute filesystem path.
+
+    Returns the repository-relative path when the directory lives inside the
+    checkout (the default), the path as given when it is already relative,
+    and a generic placeholder otherwise. Never resolves symlinks.
+    """
+    if not path.is_absolute():
+        return str(path)
+    try:
+        return str(path.relative_to(REPO_ROOT))
+    except ValueError:
+        return "<outside the repository, set by RECORDINGS_DIR>"
+
+
 class MissingCredentials(RuntimeError):
     """Raised when live mode is requested but a credential variable is empty."""
 

@@ -34,8 +34,8 @@ from app.recorder import (
 
 def make_settings(tmp_path: Path, **overrides: Any) -> Settings:
     base: dict[str, Any] = dict(
-        openf1_username=SecretStr("user@example.com"),
-        openf1_password=SecretStr("password"),
+        openf1_username=SecretStr("test-user@example.invalid"),
+        openf1_password=SecretStr("test-password-placeholder"),
         live_mode=True,
         recordings_dir=tmp_path,
     )
@@ -45,7 +45,7 @@ def make_settings(tmp_path: Path, **overrides: Any) -> Settings:
 
 class FakeTokenProvider:
     def __init__(self, *, fail: bool = False) -> None:
-        self.username = "user@example.com"
+        self.username = "test-user@example.invalid"
         self.calls: list[bool] = []
         self.fail = fail
         self.current_expiry = datetime.now(timezone.utc) + timedelta(hours=1)
@@ -54,7 +54,7 @@ class FakeTokenProvider:
         self.calls.append(force_refresh)
         if self.fail:
             raise AuthError("token endpoint rejected the credentials (HTTP 401)", kind="credentials")
-        return f"token-{len(self.calls)}"
+        return f"test-token-placeholder-{len(self.calls)}"
 
     def seconds_until_refresh(self) -> float:
         return 3600.0
@@ -448,7 +448,7 @@ def test_supervisor_refreshes_the_token_after_a_refused_connection(tmp_path: Pat
     recorder.stop(timeout=5)
 
     assert tokens.calls[:2] == [False, True], "second connect forces a fresh token"
-    assert clients[1].password == "token-2"
+    assert clients[1].password == "test-token-placeholder-2"
     assert recorder.stats.auth_state == "authenticated"
 
 

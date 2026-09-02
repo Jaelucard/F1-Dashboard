@@ -5,10 +5,12 @@ from __future__ import annotations
 import pytest
 from pydantic import SecretStr
 
-from app.config import MissingCredentials, Settings
+from pathlib import Path
 
-SENTINEL_USER = "not-a-real-user@example.com"
-SENTINEL_PASS = "hunter2-sentinel-value"
+from app.config import REPO_ROOT, MissingCredentials, Settings, describe_recordings_dir
+
+SENTINEL_USER = "test-user@example.invalid"
+SENTINEL_PASS = "test-password-placeholder"
 
 
 def _settings(**overrides: object) -> Settings:
@@ -60,3 +62,11 @@ def test_missing_credential_names_the_variable_not_the_value(
 def test_credentials_present_flag() -> None:
     assert _settings().credentials_present is True
     assert _settings(openf1_password=SecretStr("")).credentials_present is False
+
+
+def test_describe_recordings_dir_never_returns_an_absolute_path() -> None:
+    assert describe_recordings_dir(REPO_ROOT / "recordings") == "recordings"
+    assert describe_recordings_dir(Path("captures/today")) == "captures/today"
+    elsewhere = describe_recordings_dir(Path("/somewhere/private/recordings"))
+    assert not elsewhere.startswith("/")
+    assert "somewhere" not in elsewhere

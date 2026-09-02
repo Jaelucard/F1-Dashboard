@@ -18,7 +18,7 @@ from fastapi.responses import JSONResponse
 
 from app import PHASE, ws
 from app.adapters.openf1_live import OpenF1LiveSource
-from app.config import get_settings
+from app.config import describe_recordings_dir, get_settings
 from app.feed import compute_feed, evaluate_health
 from app.models import FeedInfo, RecorderInfo, SessionState
 from app.recorder import RawRecorder
@@ -45,7 +45,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     """
     settings = get_settings()
     log.info("backend starting, live_mode=%s", settings.live_mode)
-    log.info("recordings will be written under %s", settings.recordings_dir)
+    log.info("recording enabled, directory=%s", describe_recordings_dir(settings.recordings_dir))
 
     recorder: RawRecorder | None = None
     source: OpenF1LiveSource | None = None
