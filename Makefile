@@ -9,7 +9,7 @@ PYTHON ?= python3.13
 VENV := backend/.venv
 PY := $(VENV)/bin/python
 
-.PHONY: help setup setup-backend setup-frontend dev dev-backend dev-frontend record demo types test test-backend test-frontend lint clean
+.PHONY: help setup setup-backend setup-frontend dev dev-backend dev-frontend record demo types outlines test test-backend test-frontend lint clean
 
 help:
 	@echo "make setup    - create the venv and install backend + frontend deps"
@@ -17,6 +17,7 @@ help:
 	@echo "make record   - run ONLY the raw recorder (no UI) - the Tier A fallback"
 	@echo "make demo     - run with a synthetic grid, no OpenF1 connection"
 	@echo "make types    - regenerate the TypeScript types and test fixture"
+	@echo "make outlines - regenerate frontend/src/data/circuits from OpenF1 history"
 	@echo "make test     - run backend and frontend test suites"
 	@echo "make lint     - ruff (backend), eslint + tsc (frontend)"
 	@echo "make clean    - remove venv, node_modules and build output"
@@ -66,6 +67,11 @@ demo:
 types:
 	cd backend && .venv/bin/python -m scripts.generate_ts_types
 	cd backend && .venv/bin/python -m scripts.generate_fixtures
+
+# Regenerate the bundled circuit outlines from OpenF1's historical location
+# data (no credentials needed). Commit the JSON files it writes.
+outlines:
+	cd backend && .venv/bin/python -m scripts.generate_outlines
 
 test: test-backend test-frontend
 
