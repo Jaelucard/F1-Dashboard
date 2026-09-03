@@ -801,6 +801,7 @@ class OpenF1LiveSource(SessionDataSource):
         positions = self._by_driver(TOPIC_POSITION)
         intervals = self._by_driver(TOPIC_INTERVALS)
         car_data = self._by_driver(TOPIC_CAR_DATA)
+        locations = self._by_driver(TOPIC_LOCATION)
         laps_by_driver = self._grouped(TOPIC_LAPS)
         stints_by_driver = self._grouped(TOPIC_STINTS)
         pits_by_driver = self._grouped(TOPIC_PIT)
@@ -829,6 +830,7 @@ class OpenF1LiveSource(SessionDataSource):
                         positions.get(number, {}),
                         intervals.get(number, {}),
                         car_data.get(number, {}),
+                        locations.get(number, {}),
                         laps_by_driver.get(number, []),
                         stints_by_driver.get(number, []),
                         pits_by_driver.get(number, []),
@@ -855,6 +857,7 @@ class OpenF1LiveSource(SessionDataSource):
         position: Record,
         interval: Record,
         car: Record,
+        location: Record,
         laps: list[Record],
         stints: list[Record],
         pits: list[Record],
@@ -912,6 +915,9 @@ class OpenF1LiveSource(SessionDataSource):
             aero_raw=car.get("drs"),
             speed=car.get("speed"),
             updated_at=interval.get("date") or position.get("date"),
+            x=location.get("x"),
+            y=location.get("y"),
+            location_at=location.get("date"),
         )
 
     def _sorted_race_control(self) -> list[Record]:

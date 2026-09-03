@@ -325,3 +325,28 @@ def test_acceptance_replaying_the_messages_twice_is_idempotent() -> None:
     numbers = [d.driver_number for d in snapshot.drivers]
     assert len(numbers) == len(set(numbers))
     assert snapshot.drivers[0].last_lap_duration == 79.681
+
+
+# -- track map: latest location per driver ----------------------------------
+
+
+def test_driver_state_carries_latest_location() -> None:
+    source = OpenF1LiveSource()
+    source.ingest("v1/drivers", {"driver_number": 1, "name_acronym": "ONE", "session_key": 5})
+    source.ingest("v1/position", {"driver_number": 1, "position": 1, "date": "2026-09-04T11:00:00+00:00", "session_key": 5})
+    source.ingest("v1/location", {"driver_number": 1, "x": 1.0, "y": 2.0, "z": 3.0,
+                                  "date": "2026-09-04T11:00:01+00:00", "session_key": 5})
+    source.ingest("v1/location", {"driver_number": 1, "x": 10.0, "y": 20.0, "z": 3.0,
+                                  "date": "2026-09-04T11:00:02+00:00", "session_key": 5})
+
+    driver = source.snapshot().drivers[0]
+    assert (driver.x, driver.y, driver.location_at) == (10.0, 20.0, "2026-09-04T11:00:02+00:00")
+
+
+def test_driver_without_location_has_no_coordinates() -> None:
+    source = OpenF1LiveSource()
+    source.ingest("v1/drivers", {"driver_number": 1, "name_acronym": "ONE", "session_key": 5})
+    source.ingest("v1/position", {"driver_number": 1, "position": 1, "date": "2026-09-04T11:00:00+00:00", "session_key": 5})
+
+    driver = source.snapshot().drivers[0]
+    assert driver.x is None and driver.y is None and driver.location_at is None
