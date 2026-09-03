@@ -1,6 +1,7 @@
 import { useEffect } from 'react'
 import { useStore } from '../store'
 import { startSocketController } from './socketController'
+import { accessToken } from './token'
 
 /**
  * Wires the one WebSocket to the store.
@@ -11,18 +12,6 @@ import { startSocketController } from './socketController'
  * second starts, so exactly one socket survives and no timer leaks.
  */
 
-const TOKEN_STORAGE_KEY = 'f1dash.wsToken'
-
-/** Optional shared secret, if the backend has WS_AUTH_TOKEN set. */
-function accessToken(): string | null {
-  const fromBuild = import.meta.env.VITE_WS_TOKEN as string | undefined
-  if (fromBuild) return fromBuild
-  try {
-    return window.localStorage.getItem(TOKEN_STORAGE_KEY)
-  } catch {
-    return null
-  }
-}
 
 export function socketUrl(): string {
   const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
