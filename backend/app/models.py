@@ -122,6 +122,12 @@ class DriverState(Base):
     speed: int | None = None
     updated_at: str | None = None
 
+    x: float | None = None
+    """Car position from ``v1/location``, in OpenF1's circuit coordinate frame."""
+    y: float | None = None
+    location_at: str | None = None
+    """``date`` of the location sample the x/y came from."""
+
 
 class RecorderInfo(Base):
     """Recorder health, so the UI can show whether data is actually arriving
@@ -196,6 +202,28 @@ class AdapterInfo(Base):
     driver_build_errors: int = 0
 
 
+ReplayState = Literal["loaded", "playing", "paused", "seeking", "finished"]
+
+
+class ReplayInfo(Base):
+    """Transport state of a recording being replayed. Present only in replay mode."""
+
+    session_key: int
+    state: ReplayState
+    speed: float
+    """Playback rate relative to the recorded pacing (1 = as recorded)."""
+    position: str | None = None
+    """``received_at`` of the last message applied."""
+    start: str | None = None
+    end: str | None = None
+    progress: float = 0.0
+    """0..1 through the recording."""
+    messages_replayed: int = 0
+    skipped_lines: int = 0
+    """Lines of the recording that could not be parsed."""
+    ingest_errors: int = 0
+
+
 class SessionState(Base):
     """The complete snapshot pushed over the WebSocket."""
 
@@ -220,6 +248,7 @@ class SessionState(Base):
     recorder: RecorderInfo | None = None
     feed: FeedInfo | None = None
     adapter: AdapterInfo | None = None
+    replay: ReplayInfo | None = None
 
     degraded: bool = False
     """True when this frame is a re-send of the last good snapshot (or an empty

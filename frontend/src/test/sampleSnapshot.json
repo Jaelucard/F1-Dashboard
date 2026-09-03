@@ -44,7 +44,10 @@
       "pit_count": 0,
       "aero_raw": 0,
       "speed": 301,
-      "updated_at": "2026-09-04T11:45:02+00:00"
+      "updated_at": "2026-09-04T11:45:02+00:00",
+      "x": null,
+      "y": null,
+      "location_at": null
     },
     {
       "driver_number": 101,
@@ -71,7 +74,10 @@
       "pit_count": 0,
       "aero_raw": 0,
       "speed": 302,
-      "updated_at": "2026-09-04T11:45:02+00:00"
+      "updated_at": "2026-09-04T11:45:02+00:00",
+      "x": null,
+      "y": null,
+      "location_at": null
     },
     {
       "driver_number": 102,
@@ -98,7 +104,10 @@
       "pit_count": 0,
       "aero_raw": 0,
       "speed": 303,
-      "updated_at": "2026-09-04T11:45:02+00:00"
+      "updated_at": "2026-09-04T11:45:02+00:00",
+      "x": null,
+      "y": null,
+      "location_at": null
     },
     {
       "driver_number": 103,
@@ -125,7 +134,10 @@
       "pit_count": 1,
       "aero_raw": 0,
       "speed": 304,
-      "updated_at": "2026-09-04T11:45:02+00:00"
+      "updated_at": "2026-09-04T11:45:02+00:00",
+      "x": null,
+      "y": null,
+      "location_at": null
     },
     {
       "driver_number": 104,
@@ -152,7 +164,10 @@
       "pit_count": 0,
       "aero_raw": 8,
       "speed": 305,
-      "updated_at": "2026-09-04T11:45:02+00:00"
+      "updated_at": "2026-09-04T11:45:02+00:00",
+      "x": null,
+      "y": null,
+      "location_at": null
     },
     {
       "driver_number": 105,
@@ -179,7 +194,10 @@
       "pit_count": 0,
       "aero_raw": 0,
       "speed": 306,
-      "updated_at": "2026-09-04T11:45:02+00:00"
+      "updated_at": "2026-09-04T11:45:02+00:00",
+      "x": null,
+      "y": null,
+      "location_at": null
     },
     {
       "driver_number": 106,
@@ -206,7 +224,10 @@
       "pit_count": 0,
       "aero_raw": 0,
       "speed": 307,
-      "updated_at": "2026-09-04T11:45:02+00:00"
+      "updated_at": "2026-09-04T11:45:02+00:00",
+      "x": null,
+      "y": null,
+      "location_at": null
     },
     {
       "driver_number": 107,
@@ -233,7 +254,10 @@
       "pit_count": 0,
       "aero_raw": 0,
       "speed": 308,
-      "updated_at": "2026-09-04T11:45:02+00:00"
+      "updated_at": "2026-09-04T11:45:02+00:00",
+      "x": null,
+      "y": null,
+      "location_at": null
     },
     {
       "driver_number": 108,
@@ -260,7 +284,10 @@
       "pit_count": 0,
       "aero_raw": 0,
       "speed": 309,
-      "updated_at": "2026-09-04T11:45:02+00:00"
+      "updated_at": "2026-09-04T11:45:02+00:00",
+      "x": null,
+      "y": null,
+      "location_at": null
     },
     {
       "driver_number": 109,
@@ -287,7 +314,10 @@
       "pit_count": 0,
       "aero_raw": 8,
       "speed": 310,
-      "updated_at": "2026-09-04T11:45:02+00:00"
+      "updated_at": "2026-09-04T11:45:02+00:00",
+      "x": null,
+      "y": null,
+      "location_at": null
     },
     {
       "driver_number": 110,
@@ -314,7 +344,10 @@
       "pit_count": 0,
       "aero_raw": 0,
       "speed": 311,
-      "updated_at": "2026-09-04T11:45:02+00:00"
+      "updated_at": "2026-09-04T11:45:02+00:00",
+      "x": null,
+      "y": null,
+      "location_at": null
     },
     {
       "driver_number": 111,
@@ -341,7 +374,10 @@
       "pit_count": 0,
       "aero_raw": 0,
       "speed": 312,
-      "updated_at": "2026-09-04T11:45:02+00:00"
+      "updated_at": "2026-09-04T11:45:02+00:00",
+      "x": null,
+      "y": null,
+      "location_at": null
     },
     {
       "driver_number": 112,
@@ -368,7 +404,10 @@
       "pit_count": 0,
       "aero_raw": 0,
       "speed": 313,
-      "updated_at": "2026-09-04T11:45:02+00:00"
+      "updated_at": "2026-09-04T11:45:02+00:00",
+      "x": null,
+      "y": null,
+      "location_at": null
     },
     {
       "driver_number": 113,
@@ -395,7 +434,10 @@
       "pit_count": 0,
       "aero_raw": 0,
       "speed": 314,
-      "updated_at": "2026-09-04T11:45:02+00:00"
+      "updated_at": "2026-09-04T11:45:02+00:00",
+      "x": null,
+      "y": null,
+      "location_at": null
     },
     {
       "driver_number": 114,
@@ -422,7 +464,10 @@
       "pit_count": 0,
       "aero_raw": 8,
       "speed": 315,
-      "updated_at": "2026-09-04T11:45:02+00:00"
+      "updated_at": "2026-09-04T11:45:02+00:00",
+      "x": null,
+      "y": null,
+      "location_at": null
     },
     {
       "driver_number": 115,
@@ -449,7 +494,10 @@
       "pit_count": 0,
       "aero_raw": 0,
       "speed": 316,
-      "updated_at": "2026-09-04T11:45:02+00:00"
+      "updated_at": "2026-09-04T11:45:02+00:00",
+      "x": null,
+      "y": null,
+      "location_at": null
     },
     {
       "driver_number": 116,
@@ -476,7 +524,10 @@
       "pit_count": 0,
       "aero_raw": 0,
       "speed": 317,
-      "updated_at": "2026-09-04T11:45:02+00:00"
+      "updated_at": "2026-09-04T11:45:02+00:00",
+      "x": null,
+      "y": null,
+      "location_at": null
     },
     {
       "driver_number": 117,
@@ -503,7 +554,10 @@
       "pit_count": 0,
       "aero_raw": 0,
       "speed": 318,
-      "updated_at": "2026-09-04T11:45:02+00:00"
+      "updated_at": "2026-09-04T11:45:02+00:00",
+      "x": null,
+      "y": null,
+      "location_at": null
     },
     {
       "driver_number": 118,
@@ -530,7 +584,10 @@
       "pit_count": 0,
       "aero_raw": 0,
       "speed": 319,
-      "updated_at": "2026-09-04T11:45:02+00:00"
+      "updated_at": "2026-09-04T11:45:02+00:00",
+      "x": null,
+      "y": null,
+      "location_at": null
     },
     {
       "driver_number": 119,
@@ -557,7 +614,10 @@
       "pit_count": 0,
       "aero_raw": 8,
       "speed": 320,
-      "updated_at": "2026-09-04T11:45:02+00:00"
+      "updated_at": "2026-09-04T11:45:02+00:00",
+      "x": null,
+      "y": null,
+      "location_at": null
     },
     {
       "driver_number": 120,
@@ -584,7 +644,10 @@
       "pit_count": 0,
       "aero_raw": 0,
       "speed": 321,
-      "updated_at": "2026-09-04T11:45:02+00:00"
+      "updated_at": "2026-09-04T11:45:02+00:00",
+      "x": null,
+      "y": null,
+      "location_at": null
     },
     {
       "driver_number": 121,
@@ -611,7 +674,10 @@
       "pit_count": 0,
       "aero_raw": 0,
       "speed": 322,
-      "updated_at": "2026-09-04T11:45:02+00:00"
+      "updated_at": "2026-09-04T11:45:02+00:00",
+      "x": null,
+      "y": null,
+      "location_at": null
     }
   ],
   "track_flag": "YELLOW",
@@ -681,6 +747,7 @@
     "session_switches": 0,
     "driver_build_errors": 0
   },
+  "replay": null,
   "degraded": false,
   "degraded_reason": null
 }

@@ -67,6 +67,11 @@ export interface DriverState {
   aero_raw: number | null
   speed: number | null
   updated_at: string | null
+  /** Car position from `v1/location`, in OpenF1's circuit coordinate frame. */
+  x: number | null
+  y: number | null
+  /** `date` of the location sample the x/y came from. */
+  location_at: string | null
 }
 
 /**
@@ -129,6 +134,24 @@ export interface RecorderInfo {
   disk_low: boolean
 }
 
+/** Transport state of a recording being replayed. Present only in replay mode. */
+export interface ReplayInfo {
+  session_key: number
+  state: 'loaded' | 'playing' | 'paused' | 'seeking' | 'finished'
+  /** Playback rate relative to the recorded pacing (1 = as recorded). */
+  speed: number
+  /** `received_at` of the last message applied. */
+  position: string | null
+  start: string | null
+  end: string | null
+  /** 0..1 through the recording. */
+  progress: number
+  messages_replayed: number
+  /** Lines of the recording that could not be parsed. */
+  skipped_lines: number
+  ingest_errors: number
+}
+
 /** Identity of the session being shown. From the v1/sessions topic. */
 export interface SessionInfo {
   session_key: number | null
@@ -165,6 +188,7 @@ export interface SessionState {
   recorder: RecorderInfo | null
   feed: FeedInfo | null
   adapter: AdapterInfo | null
+  replay: ReplayInfo | null
   /**
    * True when this frame is a re-send of the last good snapshot (or an empty
    * one) because building a fresh snapshot failed. See `degraded_reason`.
