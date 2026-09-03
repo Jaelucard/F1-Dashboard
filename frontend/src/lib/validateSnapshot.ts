@@ -49,6 +49,9 @@ const DRIVER_FIELDS: Record<keyof Omit<DriverState, 'driver_number'>, Kind> = {
   aero_raw: 'number',
   speed: 'number',
   updated_at: 'string',
+  x: 'number',
+  y: 'number',
+  location_at: 'string',
 }
 
 const DRIVER_DEFAULTS: Record<keyof Omit<DriverState, 'driver_number'>, unknown> = {
@@ -76,6 +79,9 @@ const DRIVER_DEFAULTS: Record<keyof Omit<DriverState, 'driver_number'>, unknown>
   aero_raw: null,
   speed: null,
   updated_at: null,
+  x: null,
+  y: null,
+  location_at: null,
 }
 
 function isObject(value: unknown): value is Record<string, unknown> {
@@ -178,6 +184,9 @@ export function validateSnapshot(input: unknown): ValidationResult {
   if (input.adapter !== undefined && input.adapter !== null && !isObject(input.adapter)) {
     return { ok: false, reason: 'adapter is not an object' }
   }
+  if (input.replay !== undefined && input.replay !== null && !isObject(input.replay)) {
+    return { ok: false, reason: 'replay is not an object' }
+  }
   if (input.degraded !== undefined && typeof input.degraded !== 'boolean') {
     return { ok: false, reason: 'degraded is not a boolean' }
   }
@@ -209,6 +218,7 @@ export function validateSnapshot(input: unknown): ValidationResult {
     recorder: (input.recorder as SessionState['recorder'] | undefined) ?? null,
     feed: feed.feed,
     adapter: (input.adapter as SessionState['adapter'] | undefined) ?? null,
+    replay: (input.replay as SessionState['replay'] | undefined) ?? null,
     degraded: (input.degraded as boolean | undefined) ?? false,
     degraded_reason: (input.degraded_reason as string | null | undefined) ?? null,
   }
