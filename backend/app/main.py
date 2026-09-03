@@ -22,6 +22,9 @@ from app.config import describe_recordings_dir, get_settings
 from app.feed import compute_feed, evaluate_health
 from app.models import FeedInfo, RecorderInfo, SessionState
 from app.recorder import RawRecorder
+from app.replay import ReplayPlayer
+from app.replay_api import router as replay_router
+from app.replay_api import stop_player
 
 logging.basicConfig(
     level=logging.INFO,
@@ -49,6 +52,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
     recorder: RawRecorder | None = None
     source: OpenF1LiveSource | None = None
+    app.state.replay = None
 
     if settings.demo_mode:
         # Imported here, not at module scope: sample data is a development
@@ -94,6 +98,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     app.state.source = source
     yield
 
+    stop_player(app)
     if recorder is not None:
         recorder.stop()
     log.info("backend shutting down")
@@ -116,9 +121,16 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=["http://localhost:5173", "http://127.0.0.1:5173"],
     allow_credentials=False,
-    allow_methods=["GET"],
+    allow_methods=["GET", "POST"],
     allow_headers=["*"],
 )
+
+
+app.include_router(replay_router)
+
+
+def _current_replay() -> ReplayPlayer | None:
+    return getattr(app.state, "replay", None)
 
 
 def _current_recorder() -> RawRecorder | None:
@@ -171,6 +183,7 @@ async def health() -> dict[str, object]:
     settings = get_settings()
     evaluated = _evaluate()
     source = _current_source()
+    replay = _current_replay()
     feed = evaluated["feed"]
     return {
         "status": evaluated["status"],
@@ -188,6 +201,7 @@ async def health() -> dict[str, object]:
         "feed_stale_seconds": settings.feed_stale_seconds,
         "recorder": evaluated["recorder_health"],
         "source": source.stats() if source is not None else None,
+        "replay": replay.info().model_dump() if replay is not None else None,
     }
 
 
@@ -202,6 +216,9 @@ async def ready() -> JSONResponse:
 def build_snapshot() -> SessionState:
     """Assemble the current SessionState from whichever source is running."""
     settings = get_settings()
+    replay = _current_replay()
+    if replay is not None and not _is_demo():
+        return replay.snapshot()
     source = _current_source()
     if source is None:
         return ws.idle_snapshot(settings.credentials_present)

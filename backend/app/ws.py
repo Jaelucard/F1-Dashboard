@@ -85,6 +85,21 @@ def policy_from_settings() -> Policy:
     )
 
 
+def presented_token(query_token: str | None, authorization: str | None) -> str | None:
+    """The token a request presents: ``?token=`` first, then a Bearer header."""
+    if query_token is not None:
+        return query_token
+    auth = authorization or ""
+    if auth.lower().startswith("bearer "):
+        return auth[7:].strip()
+    return None
+
+
+def token_matches(presented: str | None, expected: str) -> bool:
+    """Constant-time comparison; a missing token never matches."""
+    return presented is not None and hmac.compare_digest(presented, expected)
+
+
 def _header(websocket: Any, name: str) -> str | None:
     headers = getattr(websocket, "headers", None)
     if headers is None:
@@ -176,12 +191,8 @@ class ConnectionManager:
             return CLOSE_ORIGIN, "origin not allowed"
 
         if policy.auth_token:
-            presented = _query(websocket, "token")
-            if presented is None:
-                auth = _header(websocket, "authorization") or ""
-                if auth.lower().startswith("bearer "):
-                    presented = auth[7:].strip()
-            if presented is None or not hmac.compare_digest(presented, policy.auth_token):
+            presented = presented_token(_query(websocket, "token"), _header(websocket, "authorization"))
+            if not token_matches(presented, policy.auth_token):
                 self.rejected["auth"] += 1
                 return CLOSE_UNAUTHORIZED, "unauthorized"
 
