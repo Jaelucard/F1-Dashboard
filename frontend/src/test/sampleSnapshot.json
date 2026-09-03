@@ -7,7 +7,7 @@
   "session": {
     "session_key": 9999,
     "meeting_key": 1300,
-    "circuit_key": 39,
+    "circuit_key": null,
     "session_name": "Practice 1",
     "session_type": "Practice",
     "circuit_short_name": "Monza",
@@ -45,9 +45,9 @@
       "aero_raw": 0,
       "speed": 301,
       "updated_at": "2026-09-04T11:45:02+00:00",
-      "x": null,
-      "y": null,
-      "location_at": null
+      "x": -2200.0,
+      "y": -1500.0,
+      "location_at": "2026-09-04T11:45:03.000+00:00"
     },
     {
       "driver_number": 101,
@@ -75,9 +75,9 @@
       "aero_raw": 0,
       "speed": 302,
       "updated_at": "2026-09-04T11:45:02+00:00",
-      "x": null,
-      "y": null,
-      "location_at": null
+      "x": -1493.4,
+      "y": -1500.0,
+      "location_at": "2026-09-04T11:45:03.270+00:00"
     },
     {
       "driver_number": 102,
@@ -105,9 +105,9 @@
       "aero_raw": 0,
       "speed": 303,
       "updated_at": "2026-09-04T11:45:02+00:00",
-      "x": null,
-      "y": null,
-      "location_at": null
+      "x": -786.7,
+      "y": -1500.0,
+      "location_at": "2026-09-04T11:45:03.540+00:00"
     },
     {
       "driver_number": 103,
@@ -165,9 +165,9 @@
       "aero_raw": 8,
       "speed": 305,
       "updated_at": "2026-09-04T11:45:02+00:00",
-      "x": null,
-      "y": null,
-      "location_at": null
+      "x": 626.5,
+      "y": -1500.0,
+      "location_at": "2026-09-04T11:45:04.080+00:00"
     },
     {
       "driver_number": 105,
@@ -195,9 +195,9 @@
       "aero_raw": 0,
       "speed": 306,
       "updated_at": "2026-09-04T11:45:02+00:00",
-      "x": null,
-      "y": null,
-      "location_at": null
+      "x": 1333.1,
+      "y": -1500.0,
+      "location_at": "2026-09-04T11:45:04.350+00:00"
     },
     {
       "driver_number": 106,
@@ -225,9 +225,9 @@
       "aero_raw": 0,
       "speed": 307,
       "updated_at": "2026-09-04T11:45:02+00:00",
-      "x": null,
-      "y": null,
-      "location_at": null
+      "x": 2039.8,
+      "y": -1500.0,
+      "location_at": "2026-09-04T11:45:04.620+00:00"
     },
     {
       "driver_number": 107,
@@ -255,9 +255,9 @@
       "aero_raw": 0,
       "speed": 308,
       "updated_at": "2026-09-04T11:45:02+00:00",
-      "x": null,
-      "y": null,
-      "location_at": null
+      "x": 2704.9,
+      "y": -1320.5,
+      "location_at": "2026-09-04T11:45:04.890+00:00"
     },
     {
       "driver_number": 108,
@@ -285,9 +285,9 @@
       "aero_raw": 0,
       "speed": 309,
       "updated_at": "2026-09-04T11:45:02+00:00",
-      "x": null,
-      "y": null,
-      "location_at": null
+      "x": 3000.0,
+      "y": -703.6,
+      "location_at": "2026-09-04T11:45:05.160+00:00"
     },
     {
       "driver_number": 109,
@@ -315,9 +315,9 @@
       "aero_raw": 8,
       "speed": 310,
       "updated_at": "2026-09-04T11:45:02+00:00",
-      "x": null,
-      "y": null,
-      "location_at": null
+      "x": 3000.0,
+      "y": 3.0,
+      "location_at": "2026-09-04T11:45:05.430+00:00"
     },
     {
       "driver_number": 110,
@@ -345,9 +345,9 @@
       "aero_raw": 0,
       "speed": 311,
       "updated_at": "2026-09-04T11:45:02+00:00",
-      "x": null,
-      "y": null,
-      "location_at": null
+      "x": 2999.9,
+      "y": 709.6,
+      "location_at": "2026-09-04T11:45:05.700+00:00"
     },
     {
       "driver_number": 111,
@@ -375,9 +375,9 @@
       "aero_raw": 0,
       "speed": 312,
       "updated_at": "2026-09-04T11:45:02+00:00",
-      "x": null,
-      "y": null,
-      "location_at": null
+      "x": 2700.2,
+      "y": 1324.3,
+      "location_at": "2026-09-04T11:45:05.970+00:00"
     },
     {
       "driver_number": 112,
@@ -405,9 +405,9 @@
       "aero_raw": 0,
       "speed": 313,
       "updated_at": "2026-09-04T11:45:02+00:00",
-      "x": null,
-      "y": null,
-      "location_at": null
+      "x": 2033.7,
+      "y": 1500.0,
+      "location_at": "2026-09-04T11:45:06.240+00:00"
     },
     {
       "driver_number": 113,
@@ -435,9 +435,9 @@
       "aero_raw": 0,
       "speed": 314,
       "updated_at": "2026-09-04T11:45:02+00:00",
-      "x": null,
-      "y": null,
-      "location_at": null
+      "x": 1327.1,
+      "y": 1500.0,
+      "location_at": "2026-09-04T11:45:06.510+00:00"
     },
     {
       "driver_number": 114,
@@ -465,9 +465,9 @@
       "aero_raw": 8,
       "speed": 315,
       "updated_at": "2026-09-04T11:45:02+00:00",
-      "x": null,
-      "y": null,
-      "location_at": null
+      "x": 620.5,
+      "y": 1500.0,
+      "location_at": "2026-09-04T11:45:06.780+00:00"
     },
     {
       "driver_number": 115,
@@ -495,9 +495,9 @@
       "aero_raw": 0,
       "speed": 316,
       "updated_at": "2026-09-04T11:45:02+00:00",
-      "x": null,
-      "y": null,
-      "location_at": null
+      "x": -86.2,
+      "y": 1500.0,
+      "location_at": "2026-09-04T11:45:07.050+00:00"
     },
     {
       "driver_number": 116,
@@ -525,9 +525,9 @@
       "aero_raw": 0,
       "speed": 317,
       "updated_at": "2026-09-04T11:45:02+00:00",
-      "x": null,
-      "y": null,
-      "location_at": null
+      "x": -792.8,
+      "y": 1500.0,
+      "location_at": "2026-09-04T11:45:07.320+00:00"
     },
     {
       "driver_number": 117,
@@ -555,9 +555,9 @@
       "aero_raw": 0,
       "speed": 318,
       "updated_at": "2026-09-04T11:45:02+00:00",
-      "x": null,
-      "y": null,
-      "location_at": null
+      "x": -1499.4,
+      "y": 1500.0,
+      "location_at": "2026-09-04T11:45:07.590+00:00"
     },
     {
       "driver_number": 118,
@@ -585,9 +585,9 @@
       "aero_raw": 0,
       "speed": 319,
       "updated_at": "2026-09-04T11:45:02+00:00",
-      "x": null,
-      "y": null,
-      "location_at": null
+      "x": -2206.0,
+      "y": 1500.0,
+      "location_at": "2026-09-04T11:45:07.860+00:00"
     },
     {
       "driver_number": 119,
@@ -615,9 +615,9 @@
       "aero_raw": 8,
       "speed": 320,
       "updated_at": "2026-09-04T11:45:02+00:00",
-      "x": null,
-      "y": null,
-      "location_at": null
+      "x": -2822.1,
+      "y": 1203.0,
+      "location_at": "2026-09-04T11:45:08.130+00:00"
     },
     {
       "driver_number": 120,
@@ -645,9 +645,9 @@
       "aero_raw": 0,
       "speed": 321,
       "updated_at": "2026-09-04T11:45:02+00:00",
-      "x": null,
-      "y": null,
-      "location_at": null
+      "x": -3000.0,
+      "y": 537.3,
+      "location_at": "2026-09-04T11:45:08.400+00:00"
     },
     {
       "driver_number": 121,
@@ -675,9 +675,9 @@
       "aero_raw": 0,
       "speed": 322,
       "updated_at": "2026-09-04T11:45:02+00:00",
-      "x": null,
-      "y": null,
-      "location_at": null
+      "x": -3000.0,
+      "y": -169.3,
+      "location_at": "2026-09-04T11:45:08.670+00:00"
     }
   ],
   "track_flag": "YELLOW",
@@ -740,7 +740,7 @@
     "sessions_retained": [
       9999
     ],
-    "messages_seen": 184,
+    "messages_seen": 205,
     "quarantined_records": 0,
     "malformed_fields": 0,
     "late_session_messages": 0,

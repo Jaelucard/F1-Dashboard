@@ -57,6 +57,46 @@ def build_grid() -> list[dict[str, Any]]:
     return drivers
 
 
+def build_loop(points: int = 400) -> list[tuple[float, float]]:
+    """A closed loop in OpenF1-like coordinates: a rounded rectangle.
+
+    Used for the synthetic ``v1/location`` samples so the track map has cars
+    to draw outside a session window. Not any real circuit.
+    """
+    import math
+
+    width, height, radius = 6000.0, 3000.0, 800.0
+    straight_w = width - 2 * radius
+    straight_h = height - 2 * radius
+    arc = math.pi * radius / 2
+    perimeter = 2 * straight_w + 2 * straight_h + 4 * arc
+    out: list[tuple[float, float]] = []
+    for i in range(points):
+        d = perimeter * i / points
+        if d < straight_w:                       # bottom edge, left to right
+            x, y = radius + d, 0.0
+        elif d < straight_w + arc:               # bottom-right corner
+            a = (d - straight_w) / radius
+            x, y = width - radius + radius * math.sin(a), radius - radius * math.cos(a)
+        elif d < straight_w + arc + straight_h:  # right edge, upwards
+            x, y = width, radius + (d - straight_w - arc)
+        elif d < straight_w + 2 * arc + straight_h:
+            a = (d - straight_w - arc - straight_h) / radius
+            x, y = width - radius + radius * math.cos(a), height - radius + radius * math.sin(a)
+        elif d < 2 * straight_w + 2 * arc + straight_h:  # top edge, right to left
+            x, y = width - radius - (d - straight_w - 2 * arc - straight_h), height
+        elif d < 2 * straight_w + 3 * arc + straight_h:
+            a = (d - 2 * straight_w - 2 * arc - straight_h) / radius
+            x, y = radius - radius * math.sin(a), height - radius + radius * math.cos(a)
+        elif d < 2 * straight_w + 3 * arc + 2 * straight_h:  # left edge, downwards
+            x, y = 0.0, height - radius - (d - 2 * straight_w - 3 * arc - straight_h)
+        else:
+            a = (d - 2 * straight_w - 3 * arc - 2 * straight_h) / radius
+            x, y = radius - radius * math.cos(a), radius - radius * math.sin(a)
+        out.append((round(x - width / 2, 1), round(y - height / 2, 1)))
+    return out
+
+
 def build_messages() -> list[tuple[str, dict[str, Any]]]:
     """Every message the injector feeds, in arrival order."""
     messages: list[tuple[str, dict[str, Any]]] = [
@@ -65,7 +105,8 @@ def build_messages() -> list[tuple[str, dict[str, Any]]]:
             {
                 "session_key": 9999,
                 "meeting_key": 1300,
-                "circuit_key": 39,
+                # No circuit_key on purpose: the sample session has no bundled
+                # track outline, so demo mode exercises the fallback trace.
                 "session_name": "Practice 1",
                 "session_type": "Practice",
                 "circuit_short_name": "Monza",
@@ -153,6 +194,19 @@ def build_messages() -> list[tuple[str, dict[str, Any]]]:
                              # Opaque in 2026. Recorded, never interpreted.
                              "drs": 8 if position % 5 == 0 else 0,
                              "date": "2026-09-04T11:45:03+00:00", "session_key": 9999})
+        )
+
+    # Car positions around the synthetic loop, spread out by grid slot. The
+    # pitted car (grid[3]) sends none, so the map has a driver without a dot.
+    loop = build_loop()
+    for index, driver in enumerate(grid):
+        if index == 3:
+            continue
+        x, y = loop[(index * 17) % len(loop)]
+        stamp = 3 + 0.27 * index
+        messages.append(
+            ("v1/location", {"driver_number": driver["driver_number"], "x": x, "y": y, "z": 0,
+                             "date": f"2026-09-04T11:45:{stamp:06.3f}+00:00", "session_key": 9999})
         )
 
     # One car in the pits this lap, one on an out-lap.

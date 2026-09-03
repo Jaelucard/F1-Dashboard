@@ -350,3 +350,13 @@ def test_driver_without_location_has_no_coordinates() -> None:
 
     driver = source.snapshot().drivers[0]
     assert driver.x is None and driver.y is None and driver.location_at is None
+
+
+def test_sample_data_places_every_car_but_the_pitted_one_on_the_loop() -> None:
+    state = build_source().snapshot()
+    with_location = [d for d in state.drivers if d.x is not None and d.y is not None]
+    without = [d for d in state.drivers if d.x is None]
+    assert len(with_location) == len(state.drivers) - 1
+    assert len(without) == 1 and without[0].in_pit is True
+    # No bundled outline for the sample session: the map must use the fallback trace.
+    assert state.session is not None and state.session.circuit_key is None
