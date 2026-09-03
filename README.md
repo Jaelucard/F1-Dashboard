@@ -16,7 +16,9 @@ Formula One Management, or the FIA.** Data is provided by the OpenF1 API.
 | 0 | Skeleton: FastAPI health route, WebSocket, React shell, `make dev` | Done |
 | 1 | `auth.py` + `recorder.py`: token, MQTT, raw `.jsonl` capture | Done |
 | 2 | Live state, `ws.py` snapshot, leaderboard, status strip | Done |
-| 3-6 | Replay, track map, 2026 aero mapping, radio, polish (Tier B) | Not started |
+| 3 | `replay.py`: replay a recording with a session picker and transport bar | Done |
+| 4 | Track map: bundled circuit outlines from OpenF1 history, live car dots | Done |
+| 5-6 | 2026 aero mapping, historical REST adapter, radio, polish (Tier B) | Not started |
 
 ## Requirements
 
@@ -165,6 +167,22 @@ is ordered by parsed UTC time with `_id` as the tie-breaker, and a record with
 an unparseable date can never become "the latest". All of this is reported in
 the `adapter` block of every snapshot and under `source` in `/health`.
 
+### Track map
+
+The panel on the right draws every car from the latest `v1/location` sample
+per driver (`x`, `y` on `DriverState`), in team colour, dimmed while in the
+pits, gliding between the once-a-second snapshots.
+
+The circuit outline underneath is **bundled**: `make outlines` runs
+`backend/scripts/generate_outlines.py`, which takes each circuit's latest
+completed session from the free OpenF1 REST API, finds the fastest clean lap,
+fetches that lap's `location` samples and simplifies them to at most 400
+points in `frontend/src/data/circuits/<circuit_key>.json`. Because the
+outline comes from the same coordinate frame as the live stream, cars land on
+the line with no per-circuit calibration. A circuit with no file (Jeddah has
+no 2026 data on OpenF1; Madrid has not run yet) falls back to tracing where
+the cars have been, so the map still draws itself as the session goes on.
+
 ## What the supporter account unlocks
 
 For Free Users, the historical data from 2023 onwards is free and needs no authentication. 
@@ -305,7 +323,37 @@ always sends one) against `WS_ALLOWED_ORIGINS`; anything else is refused with a
 
 ## Replaying a session
 
-*(Phase 3 - not yet implemented.)*
+With the backend idle (`LIVE_MODE=false`, `DEMO_MODE=false`) the bar along
+the bottom of the page lists every recording under `recordings/` and loads the
+one you pick. Once loaded: play/pause, a speed selector (1x to 25x), a scrub
+slider, and Unload. The status strip shows `REPLAY`.
+
+How it works (`backend/app/replay.py`): the per-topic `.jsonl` files are
+streamed in `received_at` order (a k-way merge, so memory stays flat however
+long the session was) into a **fresh `OpenF1LiveSource`**. A replayed snapshot
+therefore goes through exactly the validation, merging and session scoping a
+live one does, and the browser cannot tell them apart except for the mode.
+Pacing follows the recorded gaps divided by the speed, with any single gap
+clamped to five seconds so a red flag does not freeze the replay. Seeking
+forward applies messages without sleeping; seeking backward starts a fresh
+adapter and fast-forwards, which takes a moment on a long session and shows
+as `seeking`.
+
+The same controls are available over HTTP, which is what the bar calls:
+
+```
+GET  /replay/sessions            what is on disk (no paths, only keys and times)
+GET  /replay                     current state, or {"state": "idle"}
+POST /replay/load                {"session_key": 11353}
+POST /replay/play | /pause | /unload
+POST /replay/seek                {"fraction": 0.5} or {"position": "<ISO time>"}
+POST /replay/speed               {"speed": 5}
+```
+
+Replay is refused with `409` while a recorder is running or in demo mode, so
+it can never compete with a live capture. When `WS_AUTH_TOKEN` is set, the
+POST endpoints need it too (`Authorization: Bearer` or `?token=`). Replay
+state is reported under `replay` in `/health` and on every snapshot.
 
 ## Notes on the OpenF1 API
 
@@ -344,13 +392,18 @@ backend/
     main.py          FastAPI app, /health, /ready, /ws
     feed.py          feed state + health evaluation (pure functions)
     ws.py            WebSocket broadcaster, access control, slow-client drop
-    adapters/        (Phase 2+) live / replay / historical data sources
+    adapters/        live data source (replay re-feeds the same adapter)
+    replay.py        recording reader, catalog, and the replay player
+    replay_api.py    /replay control endpoints
+  scripts/
+    generate_outlines.py   `make outlines`: circuit outlines from OpenF1 history
   tests/
 frontend/
   src/
     lib/             socketController (lifecycle), validateSnapshot (runtime
                      checks), status (badge logic), format, shared types
-    components/      (Phase 2+) Leaderboard, StatusStrip, ...
+    components/      Leaderboard, StatusStrip, TrackMap, ReplayBar
+    data/circuits/   bundled circuit outlines (generated, committed)
 recordings/          raw .jsonl captures, gitignored
 ```
 

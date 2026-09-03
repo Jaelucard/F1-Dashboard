@@ -5,4 +5,4 @@ reported by /health and on every WebSocket snapshot, so the browser and the
 operator always agree about what the backend is capable of.
 """
 
-PHASE = 2
+PHASE = 4

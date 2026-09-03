@@ -5,7 +5,7 @@ import type { FeedInfo, SessionState } from '../types/sessionState'
 function snapshot(overrides: Partial<SessionState> = {}, feed: Partial<FeedInfo> | null = null): SessionState {
   return {
     type: 'snapshot',
-    phase: 2,
+    phase: 4,
     mode: 'live',
     server_time: '2026-09-04T11:46:05.000+00:00',
     credentials_present: true,
