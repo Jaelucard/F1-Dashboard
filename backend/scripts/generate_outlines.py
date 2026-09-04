@@ -5,14 +5,25 @@ when there is one), find the fastest clean lap, fetch that lap's ``location``
 samples for that driver, simplify them to at most ``MAX_POINTS`` points, and
 write ``frontend/src/data/circuits/<circuit_key>.json``.
 
+Earlier seasons are searched too, because a circuit whose weekend has not
+happened yet this year would otherwise get no file at all - and a circuit with
+no file falls back to tracing car positions in the browser, which is exactly
+when the map is least useful. OpenF1's ``location`` frame is per circuit and
+stable between seasons (checked at Monza: the 2025 and 2026 bounding boxes
+agree to about two units), so last year's outline fits this year's cars.
+
 Why from OpenF1 rather than a drawing: the outline is then in the same
 coordinate frame as the live ``location`` stream, so cars land on the line
 with no per-circuit calibration, and attribution stays with OpenF1.
 
-Historical data needs no credentials. This script never imports ``app.config``
-and so cannot read ``backend/.env``.
+Historical data normally needs no credentials, but OpenF1 restricts the whole
+API to authenticated callers *while a session is live* - which is when someone
+is most likely to notice a missing circuit and rerun this. Set ``OPENF1_TOKEN``
+to a bearer token to get through that; otherwise rerun once the session ends.
+This script never imports ``app.config`` and so cannot read ``backend/.env``.
 
-Usage:  .venv/bin/python -m scripts.generate_outlines [--year 2026] [--circuit KEY] [--out DIR]
+Usage:  .venv/bin/python -m scripts.generate_outlines [--year 2026] [--circuit KEY]
+                                                      [--years-back 2] [--out DIR]
         make outlines
 """
 
@@ -21,6 +32,7 @@ from __future__ import annotations
 import argparse
 import json
 import math
+import os
 import sys
 import time
 from collections.abc import Callable
@@ -34,6 +46,13 @@ BASE_URL = "https://api.openf1.org"
 DEFAULT_OUT = Path(__file__).resolve().parent.parent.parent / "frontend" / "src" / "data" / "circuits"
 MAX_POINTS = 400
 MIN_POINTS = 10
+DEFAULT_YEARS_BACK = 2
+"""Seasons before ``--year`` to fall back on for a circuit with nothing usable
+in the requested one."""
+
+MAX_SESSION_ATTEMPTS = 8
+"""Sessions tried per circuit before giving up, so widening the search across
+seasons cannot turn one dead circuit into dozens of requests."""
 REQUEST_INTERVAL = 0.4
 """Seconds between requests: the free tier allows 3 per second."""
 
@@ -170,9 +189,33 @@ def build_outline(
         "circuit_key": session["circuit_key"],
         "circuit_short_name": session.get("circuit_short_name"),
         "source_session_key": session_key,
+        "source_year": session.get("year"),
         "generated_at": now.isoformat(timespec="seconds"),
         "points": [[x, y] for x, y in simplify(points)],
     }
+
+
+def collect_candidates(
+    client: httpx.Client,
+    year: int,
+    now: datetime,
+    *,
+    years_back: int = DEFAULT_YEARS_BACK,
+    sleep: Sleep = time.sleep,
+) -> dict[int, list[dict[str, Any]]]:
+    """Per circuit_key, the sessions to try, best first.
+
+    Seasons are appended newest first, so the requested year's sessions are
+    always tried before an earlier year's and a circuit only falls back when
+    this season has nothing usable - or nothing at all, which is the case for
+    every circuit whose weekend is still to come.
+    """
+    combined: dict[int, list[dict[str, Any]]] = {}
+    for offset in range(years_back + 1):
+        rows = _get(client, "/v1/sessions", {"year": year - offset}, sleep)
+        for key, group in candidate_sessions(rows, now).items():
+            combined.setdefault(key, []).extend(group)
+    return combined
 
 
 def generate(
@@ -181,12 +224,13 @@ def generate(
     out_dir: Path,
     *,
     circuit: int | None = None,
+    years_back: int = DEFAULT_YEARS_BACK,
     sleep: Sleep = time.sleep,
     now: datetime | None = None,
     report: Callable[[str], None] = print,
 ) -> list[Path]:
     now = now or datetime.now(timezone.utc)
-    candidates = candidate_sessions(_get(client, "/v1/sessions", {"year": year}, sleep), now)
+    candidates = collect_candidates(client, year, now, years_back=years_back, sleep=sleep)
     out_dir.mkdir(parents=True, exist_ok=True)
     written: list[Path] = []
     for key in sorted(candidates):
@@ -195,7 +239,7 @@ def generate(
         outline: dict[str, Any] | None = None
         label = f"{key} {candidates[key][0].get('circuit_short_name') or ''}".strip()
         reasons: list[str] = []
-        for session in candidates[key]:
+        for session in candidates[key][:MAX_SESSION_ATTEMPTS]:
             try:
                 outline = build_outline(client, session, sleep=sleep, now=now)
             except httpx.HTTPStatusError as exc:
@@ -213,7 +257,12 @@ def generate(
         path = out_dir / f"{key}.json"
         path.write_text(json.dumps(outline, separators=(",", ":")) + "\n", encoding="utf-8")
         written.append(path)
-        report(f"wrote {path.name}: {len(outline['points'])} points from session {outline['source_session_key']}")
+        season = outline.get("source_year")
+        note = f" ({season} season)" if isinstance(season, int) and season != year else ""
+        report(
+            f"wrote {path.name}: {len(outline['points'])} points "
+            f"from session {outline['source_session_key']}{note}"
+        )
     return written
 
 
@@ -221,10 +270,30 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Generate circuit outlines from OpenF1 location data.")
     parser.add_argument("--year", type=int, default=datetime.now(timezone.utc).year)
     parser.add_argument("--circuit", type=int, default=None, help="only this circuit_key")
+    parser.add_argument(
+        "--years-back", type=int, default=DEFAULT_YEARS_BACK,
+        help="seasons before --year to fall back on for a circuit not yet raced this year",
+    )
     parser.add_argument("--out", type=Path, default=DEFAULT_OUT)
     args = parser.parse_args(argv)
-    with httpx.Client(base_url=BASE_URL, timeout=60.0) as client:
-        written = generate(client, args.year, args.out, circuit=args.circuit)
+
+    token = os.environ.get("OPENF1_TOKEN", "").strip()
+    headers = {"Authorization": f"Bearer {token}"} if token else {}
+    with httpx.Client(base_url=BASE_URL, timeout=60.0, headers=headers) as client:
+        try:
+            written = generate(
+                client, args.year, args.out, circuit=args.circuit, years_back=args.years_back
+            )
+        except httpx.HTTPStatusError as exc:
+            if exc.response.status_code != 401:
+                raise
+            print(
+                "OpenF1 refused the request (HTTP 401). It restricts the whole API to "
+                "authenticated callers while a session is live.\n"
+                "Rerun once the session has ended, or set OPENF1_TOKEN to a bearer token.",
+                file=sys.stderr,
+            )
+            return 2
     print(f"{len(written)} outline(s) written")
     return 0 if written else 1
 

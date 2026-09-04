@@ -6,8 +6,16 @@ latest completed session at that circuit, using OpenF1's historical `location`
 data. The points are in OpenF1's own coordinate frame, so live car positions
 land on the line without calibration.
 
+Earlier seasons are searched when the current one has nothing usable, so a
+circuit whose weekend has not run yet still gets a file (`source_year` records
+which season it came from). The frame is stable between seasons - checked at
+Monza, where the 2025 and 2026 bounding boxes agree to about two units.
+
 Do not edit these by hand: rerun `make outlines` (optionally `--circuit KEY`)
 and commit the result. A circuit without a file falls back to tracing car
 positions in the browser.
+
+OpenF1 restricts the whole API to authenticated callers while a session is
+live. Rerun once the session ends, or set `OPENF1_TOKEN` to a bearer token.
 
 Data from the [OpenF1 API](https://openf1.org).

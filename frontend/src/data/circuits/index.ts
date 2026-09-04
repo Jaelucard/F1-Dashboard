@@ -10,6 +10,8 @@ export interface Outline {
   circuit_key: number
   circuit_short_name: string | null
   source_session_key: number
+  /** The season the source session ran in; may predate the current one. */
+  source_year?: number | null
   generated_at?: string
   points: [number, number][]
 }
