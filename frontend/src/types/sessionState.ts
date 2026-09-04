@@ -65,6 +65,18 @@ export interface DriverState {
   segments_sector_2: number[]
   segments_sector_3: number[]
   is_pit_out_lap: boolean
+  best_sector_1: number | null
+  best_sector_2: number | null
+  /**
+   * This driver's fastest sector time so far this session.
+   *
+   * Minimum over their laps with a numeric, positive duration for that sector,
+   * excluding pit-out laps. Independent of which lap `sector_1/2/3` reads
+   * from - those track the lap in progress; these track the whole session.
+   */
+  best_sector_3: number | null
+  /** Sum of `best_sector_1/2/3`. Null if any of the three is missing. */
+  theoretical_lap: number | null
   compound: string | null
   stint_number: number | null
   /** current lap - stint lap_start + tyre_age_at_start. */
@@ -204,6 +216,13 @@ export interface SessionState {
   partial_aero: boolean
   /** Drives the purple timing colour without the frontend rescanning rows. */
   session_best_lap: number | null
+  /**
+   * [sector 1, sector 2, sector 3] best across every driver. Always length 3.
+   *
+   * The minimum of each driver's `best_sector_n`, so the sector-time colour
+   * can go purple without the frontend rescanning every row.
+   */
+  session_best_sectors: (number | null)[]
   race_control: RaceControlMessage[]
   recorder: RecorderInfo | null
   feed: FeedInfo | null

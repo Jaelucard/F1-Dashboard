@@ -34,8 +34,10 @@ import httpx
 
 from app.adapters.openf1_live import (
     TOPIC_DRIVERS,
+    TOPIC_INTERVALS,
     TOPIC_LAPS,
     TOPIC_PIT,
+    TOPIC_POSITION,
     TOPIC_RACE_CONTROL,
     TOPIC_SESSIONS,
     TOPIC_STINTS,
@@ -45,10 +47,13 @@ from app.adapters.openf1_live import (
 log = logging.getLogger(__name__)
 
 # (REST path, MQTT topic name). Order matters: identity first, so the strip and
-# the map come right even if a later request fails.
+# the map come right even if a later request fails; position/intervals next,
+# so running order and gaps are right before the lap-by-lap detail arrives.
 BACKFILL_TOPICS: tuple[tuple[str, str], ...] = (
     ("sessions", TOPIC_SESSIONS),
     ("drivers", TOPIC_DRIVERS),
+    ("position", TOPIC_POSITION),
+    ("intervals", TOPIC_INTERVALS),
     ("laps", TOPIC_LAPS),
     ("stints", TOPIC_STINTS),
     ("pit", TOPIC_PIT),
@@ -57,6 +62,12 @@ BACKFILL_TOPICS: tuple[tuple[str, str], ...] = (
 
 # The two topics whose absence is the whole reason this module exists.
 IDENTITY_TOPICS: tuple[str, ...] = (TOPIC_SESSIONS, TOPIC_DRIVERS)
+
+# OpenF1 returns every change for a session on these two paths - thousands of
+# rows over a race - and the adapter only ever shows the latest per driver.
+# Filtered here rather than left to the adapter's own latest-wins store, so a
+# backfill does not spend one ingest() call per historical position update.
+LATEST_PER_DRIVER_TOPICS: frozenset[str] = frozenset({TOPIC_POSITION, TOPIC_INTERVALS})
 
 RETRY_AFTER_SECONDS = 60.0
 """How long to wait before trying again after a failed or incomplete run."""
@@ -95,6 +106,28 @@ def needs_backfill(source: OpenF1LiveSource) -> bool:
     if source.active_session_key is None:
         return False
     return bool(missing_identity_topics(source))
+
+
+def _latest_per_driver(rows: Iterable[dict[str, Any]]) -> list[dict[str, Any]]:
+    """The most recent row per ``driver_number``, ordered by ``date`` then ``_id``.
+
+    OpenF1's ISO 8601 dates from one session share formatting, so lexicographic
+    comparison agrees with chronological order; ``_id`` breaks a tie between
+    two rows sharing a timestamp. A row with neither never displaces one that
+    has already been kept - it cannot be shown to be newer.
+    """
+    latest: dict[int, dict[str, Any]] = {}
+    order: dict[int, tuple[str, int]] = {}
+    for row in rows:
+        driver = row.get("driver_number")
+        if not isinstance(driver, int):
+            continue
+        message_id = row.get("_id")
+        key = (str(row.get("date") or ""), message_id if isinstance(message_id, int) else -1)
+        if driver not in order or key >= order[driver]:
+            order[driver] = key
+            latest[driver] = row
+    return list(latest.values())
 
 
 class SessionBackfill:
@@ -157,6 +190,8 @@ class SessionBackfill:
         return [row for row in body if isinstance(row, dict)]
 
     def _ingest(self, topic: str, rows: Iterable[dict[str, Any]]) -> int:
+        if topic in LATEST_PER_DRIVER_TOPICS:
+            rows = _latest_per_driver(rows)
         applied = 0
         for row in rows:
             if self._source.ingest(topic, row, backfill=True):

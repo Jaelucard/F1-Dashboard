@@ -477,3 +477,123 @@ def test_normalise_segments_handles_anything_openf1_might_send() -> None:
     assert normalise_segments(None) == []
     assert normalise_segments("2049") == [], "not a list at all"
     assert normalise_segments({"a": 1}) == []
+
+
+# -- best sectors and theoretical lap ---------------------------------------------
+
+
+def _ingest_lap(source: OpenF1LiveSource, driver: int, lap_number: int, message_id: int, **fields: object) -> None:
+    source.ingest(TOPIC_LAPS, {"session_key": 1, "driver_number": driver, "lap_number": lap_number,
+                               "_id": message_id, **fields})
+
+
+def test_best_sector_excludes_a_faster_time_set_on_a_pit_out_lap() -> None:
+    source = OpenF1LiveSource()
+    _ingest_lap(source, 16, 1, 1, lap_duration=90.0, duration_sector_2=24.0, is_pit_out_lap=True)
+    _ingest_lap(source, 16, 2, 2, lap_duration=80.0, duration_sector_2=26.0, is_pit_out_lap=False)
+
+    driver = source.snapshot().drivers[0]
+    assert driver.best_sector_2 == 26.0, "the pit-out lap's faster time must not count"
+
+
+def test_best_sector_excludes_non_positive_readings() -> None:
+    source = OpenF1LiveSource()
+    _ingest_lap(source, 16, 1, 1, lap_duration=80.0, duration_sector_1=0)
+    _ingest_lap(source, 16, 2, 2, lap_duration=80.0, duration_sector_1=26.5)
+
+    assert source.snapshot().drivers[0].best_sector_1 == 26.5
+
+
+def test_theoretical_lap_is_the_sum_of_the_three_best_sectors() -> None:
+    source = OpenF1LiveSource()
+    _ingest_lap(source, 16, 1, 1, lap_duration=80.0,
+                duration_sector_1=26.0, duration_sector_2=28.0, duration_sector_3=26.5)
+    _ingest_lap(source, 16, 2, 2, lap_duration=79.0,
+                duration_sector_1=25.5, duration_sector_2=27.5, duration_sector_3=27.0)
+
+    driver = source.snapshot().drivers[0]
+    assert driver.best_sector_1 == 25.5
+    assert driver.best_sector_2 == 27.5
+    assert driver.best_sector_3 == 26.5
+    assert driver.theoretical_lap == pytest.approx(25.5 + 27.5 + 26.5)
+
+
+def test_theoretical_lap_is_none_when_sector_3_never_arrives() -> None:
+    source = OpenF1LiveSource()
+    _ingest_lap(source, 16, 1, 1, lap_duration=80.0, duration_sector_1=26.0, duration_sector_2=28.0)
+    _ingest_lap(source, 16, 2, 2, lap_duration=79.0, duration_sector_1=25.5, duration_sector_2=27.5)
+
+    driver = source.snapshot().drivers[0]
+    assert driver.best_sector_1 is not None and driver.best_sector_2 is not None
+    assert driver.best_sector_3 is None
+    assert driver.theoretical_lap is None
+
+
+def test_session_best_sectors_is_the_minimum_across_drivers() -> None:
+    source = OpenF1LiveSource()
+    _ingest_lap(source, 16, 1, 1, lap_duration=80.0,
+                duration_sector_1=26.0, duration_sector_2=27.0, duration_sector_3=26.5)
+    _ingest_lap(source, 4, 1, 2, lap_duration=81.0,
+                duration_sector_1=25.5, duration_sector_2=28.0, duration_sector_3=26.0)
+
+    state = source.snapshot()
+    assert state.session_best_sectors == [25.5, 27.0, 26.0]
+
+
+# -- practice/qualifying gap fallback ----------------------------------------------
+
+
+def test_practice_gap_and_interval_computed_from_best_lap_when_intervals_are_empty() -> None:
+    source = OpenF1LiveSource()
+    source.ingest("v1/sessions", {"session_key": 1, "session_type": "Practice"})
+    _ingest_lap(source, 1, 1, 1, lap_duration=80.0)  # leader
+    _ingest_lap(source, 2, 1, 2, lap_duration=80.5)
+    _ingest_lap(source, 3, 1, 3, lap_duration=81.2)
+    source.ingest("v1/position", {"session_key": 1, "driver_number": 1, "position": 1})
+    source.ingest("v1/position", {"session_key": 1, "driver_number": 2, "position": 2})
+    source.ingest("v1/position", {"session_key": 1, "driver_number": 3, "position": 3})
+
+    by_number = {d.driver_number: d for d in source.snapshot().drivers}
+    assert by_number[1].gap_to_leader == 0.0
+    assert by_number[1].interval_ahead is None
+    assert by_number[2].gap_to_leader == pytest.approx(0.5)
+    assert by_number[2].interval_ahead == pytest.approx(0.5)
+    assert by_number[3].gap_to_leader == pytest.approx(1.2)
+    assert by_number[3].interval_ahead == pytest.approx(0.7)
+
+
+def test_practice_gap_is_none_for_a_driver_with_no_best_lap() -> None:
+    source = OpenF1LiveSource()
+    source.ingest("v1/sessions", {"session_key": 1, "session_type": "Practice"})
+    _ingest_lap(source, 1, 1, 1, lap_duration=80.0)
+    source.ingest("v1/position", {"session_key": 1, "driver_number": 1, "position": 1})
+    source.ingest("v1/position", {"session_key": 1, "driver_number": 9, "position": 2})
+
+    by_number = {d.driver_number: d for d in source.snapshot().drivers}
+    assert by_number[9].gap_to_leader is None
+    assert by_number[9].interval_ahead is None
+
+
+def test_practice_gap_fallback_never_runs_once_real_intervals_are_flowing() -> None:
+    source = OpenF1LiveSource()
+    source.ingest("v1/sessions", {"session_key": 1, "session_type": "Practice"})
+    _ingest_lap(source, 1, 1, 1, lap_duration=80.0)
+    _ingest_lap(source, 2, 1, 2, lap_duration=80.5)
+    source.ingest("v1/intervals", {"session_key": 1, "driver_number": 2,
+                                   "gap_to_leader": 9.99, "interval": 9.99, "date": "2026-01-01T00:00:00Z"})
+
+    driver_2 = next(d for d in source.snapshot().drivers if d.driver_number == 2)
+    assert driver_2.gap_to_leader == 9.99, "the real value, not the best-lap approximation"
+
+
+def test_race_gap_is_left_untouched_even_with_no_intervals_yet() -> None:
+    """A race can start before intervals arrive too - the fallback is keyed on
+    session_type alone, and must never fire for a race."""
+    source = OpenF1LiveSource()
+    source.ingest("v1/sessions", {"session_key": 1, "session_type": "Race"})
+    _ingest_lap(source, 1, 1, 1, lap_duration=80.0)
+    _ingest_lap(source, 2, 1, 2, lap_duration=80.5)
+
+    by_number = {d.driver_number: d for d in source.snapshot().drivers}
+    assert by_number[1].gap_to_leader is None
+    assert by_number[2].gap_to_leader is None

@@ -43,6 +43,10 @@ const DRIVER_FIELDS: Record<keyof Omit<DriverState, 'driver_number'>, Kind> = {
   segments_sector_1: 'ints',
   segments_sector_2: 'ints',
   segments_sector_3: 'ints',
+  best_sector_1: 'number',
+  best_sector_2: 'number',
+  best_sector_3: 'number',
+  theoretical_lap: 'number',
   is_pit_out_lap: 'boolean',
   compound: 'string',
   stint_number: 'number',
@@ -76,6 +80,10 @@ const DRIVER_DEFAULTS: Record<keyof Omit<DriverState, 'driver_number'>, unknown>
   segments_sector_1: [],
   segments_sector_2: [],
   segments_sector_3: [],
+  best_sector_1: null,
+  best_sector_2: null,
+  best_sector_3: null,
+  theoretical_lap: null,
   is_pit_out_lap: false,
   compound: null,
   stint_number: null,
@@ -193,6 +201,16 @@ export function validateSnapshot(input: unknown): ValidationResult {
     return { ok: false, reason: 'partial_aero is not a boolean' }
   }
   if (!matches('number', input.session_best_lap)) return { ok: false, reason: 'session_best_lap is not a number' }
+  if (
+    input.session_best_sectors !== undefined &&
+    input.session_best_sectors !== null &&
+    !(
+      Array.isArray(input.session_best_sectors) &&
+      input.session_best_sectors.every((v) => v === null || (typeof v === 'number' && Number.isFinite(v)))
+    )
+  ) {
+    return { ok: false, reason: 'session_best_sectors is not an array of number/null' }
+  }
   if (input.recorder !== undefined && input.recorder !== null && !isObject(input.recorder)) {
     return { ok: false, reason: 'recorder is not an object' }
   }
@@ -229,6 +247,9 @@ export function validateSnapshot(input: unknown): ValidationResult {
     session_status: (input.session_status as string | null | undefined) ?? null,
     partial_aero: (input.partial_aero as boolean | undefined) ?? false,
     session_best_lap: (input.session_best_lap as number | null | undefined) ?? null,
+    session_best_sectors:
+      (input.session_best_sectors as SessionState['session_best_sectors'] | undefined) ??
+      [null, null, null],
     race_control: (input.race_control as SessionState['race_control'] | undefined) ?? [],
     recorder: (input.recorder as SessionState['recorder'] | undefined) ?? null,
     feed: feed.feed,

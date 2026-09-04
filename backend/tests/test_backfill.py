@@ -15,7 +15,9 @@ import pytest
 
 from app.adapters.openf1_live import (
     TOPIC_DRIVERS,
+    TOPIC_INTERVALS,
     TOPIC_LAPS,
+    TOPIC_POSITION,
     TOPIC_SESSIONS,
     OpenF1LiveSource,
 )
@@ -57,14 +59,32 @@ RACE_CONTROL = [{"session_key": SESSION_KEY, "date": "2026-09-04T14:00:05+00:00"
                  "category": "Flag", "flag": "GREEN", "scope": "Track",
                  "message": "GREEN LIGHT - PIT EXIT OPEN"}]
 
+# Three changes for one driver, out of order and with an out-of-order duplicate
+# _id thrown in - the shape that "keep only the latest" actually has to handle.
+POSITION = [
+    {"session_key": SESSION_KEY, "driver_number": 16, "position": 3, "_id": 10,
+     "date": "2026-09-04T14:05:00+00:00"},
+    {"session_key": SESSION_KEY, "driver_number": 16, "position": 2, "_id": 12,
+     "date": "2026-09-04T14:11:00+00:00"},
+    {"session_key": SESSION_KEY, "driver_number": 16, "position": 4, "_id": 11,
+     "date": "2026-09-04T14:08:00+00:00"},
+]
+INTERVALS = [
+    {"session_key": SESSION_KEY, "driver_number": 16, "gap_to_leader": 1.2,
+     "interval": 1.2, "_id": 20, "date": "2026-09-04T14:05:00+00:00"},
+    {"session_key": SESSION_KEY, "driver_number": 16, "gap_to_leader": 0.4,
+     "interval": 0.4, "_id": 21, "date": "2026-09-04T14:11:00+00:00"},
+]
+
 BODIES = {
-    "sessions": SESSIONS, "drivers": DRIVERS, "laps": LAPS,
-    "stints": STINTS, "pit": PIT, "race_control": RACE_CONTROL,
+    "sessions": SESSIONS, "drivers": DRIVERS, "position": POSITION,
+    "intervals": INTERVALS, "laps": LAPS, "stints": STINTS, "pit": PIT,
+    "race_control": RACE_CONTROL,
 }
 
 
 def fake_api(seen: list[httpx.Request], *, status: dict[str, int] | None = None) -> httpx.AsyncClient:
-    """Answers the six backfill paths. ``status`` forces a code for a path."""
+    """Answers the eight backfill paths. ``status`` forces a code for a path."""
     status = status or {}
 
     def handler(request: httpx.Request) -> httpx.Response:
@@ -145,6 +165,9 @@ async def test_backfill_populates_session_and_driver_identity() -> None:
     # Laps and stints came too, so the row is not just a name.
     assert by_number[16].best_lap_duration == 81.2
     assert by_number[16].compound == "MEDIUM"
+    # Running order and gaps came too, not just the lap-by-lap detail.
+    assert by_number[16].position == 2, "the latest of three position rows"
+    assert by_number[16].gap_to_leader == 0.4, "the latest of two interval rows"
 
 
 @pytest.mark.asyncio
@@ -156,7 +179,7 @@ async def test_backfill_asks_only_for_the_active_session_and_never_for_telemetry
         ).run(SESSION_KEY)
 
     paths = [r.url.path.rsplit("/", 1)[-1] for r in seen]
-    assert paths == ["sessions", "drivers", "laps", "stints", "pit", "race_control"]
+    assert paths == ["sessions", "drivers", "position", "intervals", "laps", "stints", "pit", "race_control"]
     # car_data must be windowed and location is huge; the live stream covers both.
     assert "car_data" not in paths and "location" not in paths
     for request in seen:
@@ -172,7 +195,11 @@ async def test_backfilled_rows_are_counted_apart_from_mqtt_messages() -> None:
 
     info = source.snapshot().adapter
     assert info.messages_seen == seen_mqtt, "REST rows must not inflate the wire count"
-    assert info.backfilled_records == len(SESSIONS) + len(DRIVERS) + len(LAPS) + len(STINTS) + len(RACE_CONTROL)
+    # position/intervals count once per driver post-dedup (1 here), not once
+    # per row fetched (3 and 2).
+    assert info.backfilled_records == (
+        len(SESSIONS) + len(DRIVERS) + 1 + 1 + len(LAPS) + len(STINTS) + len(RACE_CONTROL)
+    )
 
 
 @pytest.mark.asyncio
@@ -219,7 +246,9 @@ async def test_a_detail_object_instead_of_rows_is_an_error_not_a_crash() -> None
         result = await SessionBackfill(
             timing_only_source(), client, api_base="https://api.openf1.org/v1"
         ).run(SESSION_KEY)
-    assert set(result.errors) == {"sessions", "drivers", "laps", "stints", "pit", "race_control"}
+    assert set(result.errors) == {
+        "sessions", "drivers", "position", "intervals", "laps", "stints", "pit", "race_control",
+    }
     assert result.total == 0
 
 
@@ -296,3 +325,30 @@ async def _yield() -> None:
     import asyncio
 
     await asyncio.sleep(0.005)
+
+
+@pytest.mark.asyncio
+async def test_position_backfill_keeps_only_the_latest_row_per_driver() -> None:
+    """position/intervals return every change for the session; only the latest
+    per driver may reach ingest(), or the store would do one upsert per row."""
+    source = timing_only_source()
+    async with fake_api([]) as client:
+        result = await SessionBackfill(
+            source, client, api_base="https://api.openf1.org/v1"
+        ).run(SESSION_KEY, topics=(("position", TOPIC_POSITION),))
+
+    assert result.rows[TOPIC_POSITION] == 1, "three rows for one driver collapse to one"
+    driver = source.snapshot().drivers[0]
+    assert driver.position == 2, "the row with the latest date, not the highest _id alone"
+
+
+@pytest.mark.asyncio
+async def test_intervals_backfill_keeps_only_the_latest_row_per_driver() -> None:
+    source = timing_only_source()
+    async with fake_api([]) as client:
+        result = await SessionBackfill(
+            source, client, api_base="https://api.openf1.org/v1"
+        ).run(SESSION_KEY, topics=(("intervals", TOPIC_INTERVALS),))
+
+    assert result.rows[TOPIC_INTERVALS] == 1
+    assert source.snapshot().drivers[0].gap_to_leader == 0.4

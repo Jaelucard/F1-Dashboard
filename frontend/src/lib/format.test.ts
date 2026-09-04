@@ -8,6 +8,7 @@ import {
   formatTyreAge,
   lapTimeColour,
   NO_DATA,
+  sectorColour,
 } from './format'
 
 describe('formatLapTime', () => {
@@ -111,6 +112,45 @@ describe('lapTimeColour', () => {
 
   it('is white when there is no lap', () => {
     expect(lapTimeColour(null, 80.1, 79.5)).toBe('none')
+  })
+})
+
+describe('sectorColour', () => {
+  it('is purple for the session best', () => {
+    expect(sectorColour(26.501, 26.501, 26.501)).toBe('best')
+  })
+
+  it('is green for a personal best that is not the session best', () => {
+    expect(sectorColour(27.1, 27.1, 26.5)).toBe('personal')
+  })
+
+  it('is yellow for a sector slower than the driver own best', () => {
+    expect(sectorColour(28.0, 27.1, 26.5)).toBe('slower')
+  })
+
+  it('is white when the sector has no time yet', () => {
+    expect(sectorColour(null, 27.1, 26.5)).toBe('none')
+    expect(sectorColour(undefined, 27.1, 26.5)).toBe('none')
+  })
+
+  it('matches within a 0.0005s tolerance, not exact equality', () => {
+    // Backend-computed running minimums can drift from the value they should
+    // match by float noise; exact equality would wrongly show yellow.
+    expect(sectorColour(26.5004, 27.1, 26.5)).toBe('best')
+    expect(sectorColour(26.5005, 27.1, 26.5)).toBe('best')
+    // just outside the tolerance
+    expect(sectorColour(26.5006, 27.1, 26.5)).toBe('slower')
+  })
+
+  it('checks the session best before the personal best', () => {
+    // A driver's own best that happens to equal the session best must read
+    // purple, not green - session best takes priority.
+    expect(sectorColour(26.5, 26.5, 26.5)).toBe('best')
+  })
+
+  it('has no session best yet: falls through to personal, then slower', () => {
+    expect(sectorColour(27.1, 27.1, null)).toBe('personal')
+    expect(sectorColour(27.1, null, null)).toBe('slower')
   })
 })
 

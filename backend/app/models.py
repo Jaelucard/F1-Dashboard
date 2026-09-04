@@ -108,6 +108,18 @@ class DriverState(Base):
     segments_sector_3: list[int] = Field(default_factory=list)
     is_pit_out_lap: bool = False
 
+    best_sector_1: float | None = None
+    best_sector_2: float | None = None
+    best_sector_3: float | None = None
+    """This driver's fastest sector time so far this session.
+
+    Minimum over their laps with a numeric, positive duration for that sector,
+    excluding pit-out laps. Independent of which lap ``sector_1/2/3`` reads
+    from - those track the lap in progress; these track the whole session."""
+
+    theoretical_lap: float | None = None
+    """Sum of ``best_sector_1/2/3``. Null if any of the three is missing."""
+
     compound: str | None = None
     stint_number: int | None = None
     tyre_age: int | None = None
@@ -259,6 +271,12 @@ class SessionState(Base):
 
     session_best_lap: float | None = None
     """Drives the purple timing colour without the frontend rescanning rows."""
+
+    session_best_sectors: list[float | None] = Field(default_factory=lambda: [None, None, None])
+    """[sector 1, sector 2, sector 3] best across every driver. Always length 3.
+
+    The minimum of each driver's ``best_sector_n``, so the sector-time colour
+    can go purple without the frontend rescanning every row."""
 
     race_control: list[RaceControlMessage] = Field(default_factory=list)
     recorder: RecorderInfo | None = None

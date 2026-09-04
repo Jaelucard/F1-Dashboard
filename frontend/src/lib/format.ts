@@ -108,6 +108,41 @@ export function lapTimeColour(
   return 'slower'
 }
 
+export const SECTOR_TOLERANCE_SECONDS = 0.0005
+
+/**
+ * Which colour a sector time gets. Same purple/green/yellow/none rule as
+ * `lapTimeColour`, but with a tolerance rather than exact equality.
+ *
+ * Sector values are computed on the backend (`sector_1/2/3` from whichever
+ * lap is currently selected, `best_sector_n`/`session_best_sectors` as a
+ * running minimum recomputed every snapshot) rather than carried forward
+ * unchanged from one OpenF1 message, so float drift between "this value" and
+ * "the minimum it should match" is possible in a way it is not for lap times.
+ */
+export function sectorColour(
+  value: number | null | undefined,
+  personalBest: number | null | undefined,
+  sessionBest: number | null | undefined,
+): TimingColour {
+  if (value === null || value === undefined || !Number.isFinite(value)) return 'none'
+  if (
+    sessionBest !== null &&
+    sessionBest !== undefined &&
+    Math.abs(value - sessionBest) <= SECTOR_TOLERANCE_SECONDS
+  ) {
+    return 'best'
+  }
+  if (
+    personalBest !== null &&
+    personalBest !== undefined &&
+    Math.abs(value - personalBest) <= SECTOR_TOLERANCE_SECONDS
+  ) {
+    return 'personal'
+  }
+  return 'slower'
+}
+
 /** Session clock: elapsed time since the session started. */
 export function formatSessionClock(startIso: string | null, now: Date = new Date()): string {
   if (!startIso) return NO_DATA

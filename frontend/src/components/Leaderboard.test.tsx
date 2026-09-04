@@ -3,6 +3,7 @@ import { render, screen, within } from '@testing-library/react'
 import { Leaderboard } from './Leaderboard'
 import { StatusStrip } from './StatusStrip'
 import { useStore } from '../store'
+import { formatLapTime } from '../lib/format'
 import type { SessionState } from '../types/sessionState'
 import sampleSnapshot from '../test/sampleSnapshot.json'
 
@@ -51,16 +52,36 @@ describe('Leaderboard', () => {
     expect(snapshot.drivers.length).toBeGreaterThanOrEqual(20)
   })
 
-  it('renders every Tier A column and no DRS column', () => {
+  it('renders every column and no DRS column', () => {
     inject()
     render(<Leaderboard />)
-    for (const heading of ['Pos', 'Driver', 'Tyre', 'Last', 'Best', 'Gap', 'Int', 'S1', 'S2', 'S3', 'Pit']) {
+    const headings = [
+      'Pos', 'Driver', 'Last', 'Best', 'Tyre', 'Gap', 'Int', 'S1', 'S2', 'S3', 'Speed', 'Theo', 'Pit',
+    ]
+    for (const heading of headings) {
       expect(screen.getByRole('columnheader', { name: heading })).toBeInTheDocument()
     }
     // 2026 has no DRS. These must not exist anywhere, in any casing.
     expect(screen.queryByText(/drs/i)).not.toBeInTheDocument()
     expect(screen.queryByText(/^aero$/i)).not.toBeInTheDocument()
     expect(screen.queryByText(/^ot$/i)).not.toBeInTheDocument()
+  })
+
+  it('lays out columns left to right in the reference order', () => {
+    inject()
+    render(<Leaderboard />)
+    const headers = screen.getAllByRole('columnheader').map((th) => th.textContent)
+    expect(headers).toEqual([
+      'Pos', 'Team colour', 'Driver', 'Last', 'Best', 'Tyre', 'Gap', 'Int', 'S1', 'S2', 'S3', 'Speed', 'Theo', 'Pit',
+    ])
+    // data-col attributes on a row must agree with the header order, so a
+    // reorder of one without the other cannot pass silently.
+    const cols = Array.from(rowFor('VER').querySelectorAll('td[data-col]')).map((td) =>
+      td.getAttribute('data-col'),
+    )
+    expect(cols).toEqual([
+      'pos', 'colour', 'driver', 'last', 'best', 'tyre', 'gap', 'int', 's1', 's2', 's3', 'speed', 'theo', 'pit',
+    ])
   })
 
   it('orders rows by position', () => {
@@ -142,6 +163,33 @@ describe('Leaderboard', () => {
     expect(cell(slower.name_acronym!, 'best').className).toContain('text-timing-personal')
   })
 
+  it('colours the sector time purple for the session best', () => {
+    inject()
+    render(<Leaderboard />)
+    // VER holds the session-best S1 in the fixture.
+    expect(cell('VER', 's1').querySelector('span')!.className).toContain('text-timing-best')
+  })
+
+  it('colours the sector time green for a personal best that is not the session best', () => {
+    const withGap = snapshot.drivers.map((d) =>
+      d.name_acronym === 'VER'
+        ? { ...d, sector_1: 27.9, best_sector_1: 27.9 } // no longer the session's 27.8
+        : d,
+    )
+    inject({ ...snapshot, drivers: withGap })
+    render(<Leaderboard />)
+    expect(cell('VER', 's1').querySelector('span')!.className).toContain('text-timing-personal')
+  })
+
+  it('colours the sector time yellow when slower than the driver own best', () => {
+    const slower = snapshot.drivers.map((d) =>
+      d.name_acronym === 'VER' ? { ...d, sector_1: 29.0 } : d, // best_sector_1 stays 27.8
+    )
+    inject({ ...snapshot, drivers: slower })
+    render(<Leaderboard />)
+    expect(cell('VER', 's1').querySelector('span')!.className).toContain('text-timing-slower')
+  })
+
   it('shows the mini-sector strip inside each sector cell', () => {
     inject()
     render(<Leaderboard />)
@@ -177,6 +225,43 @@ describe('Leaderboard', () => {
     const s3 = cell('VER', 's3')
     expect(s3.textContent).toContain('—')
     expect(s3.querySelectorAll('[data-testid="mini-sectors"] span')).toHaveLength(2)
+  })
+
+  it('shows speed in km/h', () => {
+    inject()
+    render(<Leaderboard />)
+    const ver = snapshot.drivers.find((d) => d.name_acronym === 'VER')!
+    expect(cell('VER', 'speed').textContent).toBe(`${Math.round(ver.speed!)} km/h`)
+  })
+
+  it('shows NO_DATA when speed is absent', () => {
+    const noSpeed = snapshot.drivers.map((d) => (d.name_acronym === 'VER' ? { ...d, speed: null } : d))
+    inject({ ...snapshot, drivers: noSpeed })
+    render(<Leaderboard />)
+    expect(cell('VER', 'speed').textContent).toBe('—')
+  })
+
+  it('shows the theoretical lap, best colour only when it matches the field minimum', () => {
+    inject()
+    render(<Leaderboard />)
+    // VER's theoretical lap (from the fixture's fastest sectors) is the
+    // minimum across the whole grid, since every driver shares the same
+    // sector split - so VER's THEO cell is coloured best...
+    expect(cell('VER', 'theo').className).toContain('text-timing-best')
+    // ...and formatted the same way a lap time is.
+    const ver = snapshot.drivers.find((d) => d.name_acronym === 'VER')!
+    expect(cell('VER', 'theo').textContent).toBe(formatLapTime(ver.theoretical_lap))
+  })
+
+  it('shows a plain (not best) colour for a theoretical lap that is not the minimum', () => {
+    const behind = snapshot.drivers.map((d) =>
+      d.name_acronym === 'VER'
+        ? { ...d, best_sector_1: 30.0, best_sector_2: 30.0, best_sector_3: 30.0, theoretical_lap: 90.0 }
+        : d,
+    )
+    inject({ ...snapshot, drivers: behind })
+    render(<Leaderboard />)
+    expect(cell('VER', 'theo').className).not.toContain('text-timing-best')
   })
 
   it('shows a helpful message rather than an empty table before data arrives', () => {

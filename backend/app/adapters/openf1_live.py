@@ -358,6 +358,27 @@ def has_sector_data(lap: Record) -> bool:
     return any(normalise_segments(lap.get(name)) for name in SEGMENT_FIELDS)
 
 
+def best_sector_times(laps: list[Record]) -> tuple[float | None, float | None, float | None]:
+    """The minimum of each sector duration across a driver's laps this session.
+
+    Excludes pit-out laps (an out lap is not a representative sector time) and
+    non-positive readings (0, or anything negative, would win every comparison
+    without being a real time). Independent of which single lap the live
+    ``sector_1/2/3`` fields read from.
+    """
+    bests: list[float | None] = []
+    for field_name in DURATION_FIELDS:
+        values = [
+            lap[field_name]
+            for lap in laps
+            if not lap.get("is_pit_out_lap")
+            and isinstance(lap.get(field_name), (int, float))
+            and lap[field_name] > 0
+        ]
+        bests.append(min(values) if values else None)
+    return (bests[0], bests[1], bests[2])
+
+
 def _as_datetime(value: Any) -> datetime | None:
     if not isinstance(value, str) or not value:
         return None
@@ -804,8 +825,8 @@ class OpenF1LiveSource(SessionDataSource):
         self, *, mode: str = "live", recorder: RecorderInfo | None = None
     ) -> SessionState:
         with self._lock:
-            drivers = self._build_drivers()
             session = self._build_session()
+            drivers = self._build_drivers(session.session_type if session is not None else None)
             flag, status, partial_aero = self._build_race_control_state()
             best = [d.best_lap_duration for d in drivers if d.best_lap_duration]
 
@@ -820,10 +841,19 @@ class OpenF1LiveSource(SessionDataSource):
                 session_status=status,
                 partial_aero=partial_aero,
                 session_best_lap=min(best) if best else None,
+                session_best_sectors=self._session_best_sectors(drivers),
                 race_control=self._build_race_control_messages(),
                 recorder=recorder,
                 adapter=self._adapter_info(),
             )
+
+    @staticmethod
+    def _session_best_sectors(drivers: list[DriverState]) -> list[float | None]:
+        result: list[float | None] = []
+        for field_name in ("best_sector_1", "best_sector_2", "best_sector_3"):
+            values = [v for d in drivers if (v := getattr(d, field_name)) is not None]
+            result.append(min(values) if values else None)
+        return result
 
     def _build_session(self) -> SessionInfo | None:
         records = self._records(TOPIC_SESSIONS)
@@ -843,7 +873,7 @@ class OpenF1LiveSource(SessionDataSource):
             log.exception("could not build SessionInfo")
             return None
 
-    def _build_drivers(self) -> list[DriverState]:
+    def _build_drivers(self, session_type: str | None = None) -> list[DriverState]:
         entries = self._by_driver(TOPIC_DRIVERS)
         positions = self._by_driver(TOPIC_POSITION)
         intervals = self._by_driver(TOPIC_INTERVALS)
@@ -890,12 +920,40 @@ class OpenF1LiveSource(SessionDataSource):
         # Sort by position, with unclassified cars last but still shown.
         states.sort(key=lambda d: (d.position is None, d.position or 0, d.driver_number))
 
+        # v1/intervals is race-only: practice and qualifying carry no gap data
+        # at all, so the store for the active session stays empty. Approximate
+        # the same two columns from best lap times rather than leave them blank.
+        # Never runs once real intervals start flowing, in a race or otherwise.
+        if session_type != "Race" and not self._records(TOPIC_INTERVALS):
+            self._apply_practice_gaps(states)
+
         # Interval to the car behind is just the following car's interval to
-        # the car ahead - it is the same gap seen from the other side.
+        # the car ahead - it is the same gap seen from the other side. After
+        # the practice fallback so it reflects whichever source filled ahead.
         for ahead, behind in zip(states, states[1:]):
             ahead.interval_behind = behind.interval_ahead
 
         return states
+
+    @staticmethod
+    def _apply_practice_gaps(states: list[DriverState]) -> None:
+        """Gap to the session's best lap, and interval to the driver one
+        position above, both from ``best_lap_duration``. ``states`` is already
+        sorted by position, so "one position above" is simply the previous
+        entry. A driver with no best lap yet - or whose neighbour has none -
+        gets None rather than a number derived from nothing.
+        """
+        bests = [d.best_lap_duration for d in states]
+        session_best = min((b for b in bests if b is not None), default=None)
+        for index, driver in enumerate(states):
+            own = driver.best_lap_duration
+            if own is None:
+                driver.gap_to_leader = None
+                driver.interval_ahead = None
+                continue
+            driver.gap_to_leader = None if session_best is None else round(own - session_best, 3)
+            above = bests[index - 1] if index > 0 else None
+            driver.interval_ahead = None if above is None else round(own - above, 3)
 
     @staticmethod
     def _build_driver(
@@ -933,6 +991,11 @@ class OpenF1LiveSource(SessionDataSource):
         # completed lap: the one in progress has none.
         lap_for_sectors = latest_lap if has_sector_data(latest_lap) else last_completed
 
+        best_s1, best_s2, best_s3 = best_sector_times(laps)
+        theoretical_lap = (
+            best_s1 + best_s2 + best_s3 if None not in (best_s1, best_s2, best_s3) else None
+        )
+
         stints = sorted(stints, key=lambda stint: stint.get("stint_number") or 0)
         stint = stints[-1] if stints else {}
         current_lap = latest_lap.get("lap_number")
@@ -959,6 +1022,10 @@ class OpenF1LiveSource(SessionDataSource):
             segments_sector_1=normalise_segments(lap_for_sectors.get("segments_sector_1")),
             segments_sector_2=normalise_segments(lap_for_sectors.get("segments_sector_2")),
             segments_sector_3=normalise_segments(lap_for_sectors.get("segments_sector_3")),
+            best_sector_1=best_s1,
+            best_sector_2=best_s2,
+            best_sector_3=best_s3,
+            theoretical_lap=theoretical_lap,
             is_pit_out_lap=bool(latest_lap.get("is_pit_out_lap")),
             compound=stint.get("compound"),
             stint_number=stint.get("stint_number"),

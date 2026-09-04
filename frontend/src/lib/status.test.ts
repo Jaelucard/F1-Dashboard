@@ -15,6 +15,7 @@ function snapshot(overrides: Partial<SessionState> = {}, feed: Partial<FeedInfo>
     session_status: null,
     partial_aero: false,
     session_best_lap: null,
+    session_best_sectors: [null, null, null],
     race_control: [],
     recorder: null,
     replay: null,
