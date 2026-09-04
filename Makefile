@@ -9,7 +9,7 @@ PYTHON ?= python3.13
 VENV := backend/.venv
 PY := $(VENV)/bin/python
 
-.PHONY: help setup setup-backend setup-frontend dev dev-backend dev-frontend record demo types outlines test test-backend test-frontend lint clean
+.PHONY: help setup setup-backend setup-frontend dev dev-backend dev-frontend record demo types outlines test test-backend test-frontend lint clean clean-recordings
 
 help:
 	@echo "make setup    - create the venv and install backend + frontend deps"
@@ -21,6 +21,7 @@ help:
 	@echo "make test     - run backend and frontend test suites"
 	@echo "make lint     - ruff (backend), eslint + tsc (frontend)"
 	@echo "make clean    - remove venv, node_modules and build output"
+	@echo "make clean-recordings - delete recordings/<session_key> folders, one at a time, with a y/N prompt"
 
 setup: setup-backend setup-frontend
 
@@ -88,3 +89,23 @@ lint:
 
 clean:
 	rm -rf $(VENV) frontend/node_modules frontend/dist
+
+# Frees disk space by deleting old recordings/<session_key> folders. Prompts
+# once per folder - never deletes without an explicit y - because a recording
+# is the only artefact replay and the Phase 5 aero_raw analysis depend on.
+clean-recordings:
+	@if [ ! -d recordings ]; then echo "no recordings/ directory"; exit 0; fi
+	@found=0; \
+	for dir in recordings/*/; do \
+		[ -d "$$dir" ] || continue; \
+		found=1; \
+		key=$$(basename "$$dir"); \
+		du -sh "$$dir"; \
+		printf "Delete %s? [y/N] " "$$key"; \
+		read confirm; \
+		case "$$confirm" in \
+			y|Y) rm -rf "$$dir"; echo "deleted $$key";; \
+			*) echo "kept $$key";; \
+		esac; \
+	done; \
+	if [ "$$found" = 0 ]; then echo "no session recordings found"; fi

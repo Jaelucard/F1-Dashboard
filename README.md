@@ -67,7 +67,7 @@ Useful endpoints:
 
 ```bash
 make demo           # synthetic 22-car grid, connects to nothing
-make test           # backend (217) + frontend (103) test suites
+make test           # backend (335) + frontend (160) test suites
 make types          # regenerate the TypeScript types and test fixture
 make lint           # ruff (backend), oxlint + tsc -b (frontend)
 ```
@@ -289,6 +289,30 @@ capture is the artefact, and stopping early loses more than it saves.
 that is around 150 messages a second, or very roughly **100 MB per hour of
 running**. A full weekend is likely to be somewhere under a gigabyte. Check you
 have the room before FP1.
+
+Check what a session actually used:
+
+```bash
+du -sh recordings/*
+```
+
+If a machine is short on space and only needs the live dashboard, set
+`RECORDING_ENABLED=false` in `backend/.env`. The recorder still connects and
+feeds the live adapter - the dashboard keeps working - it just never writes to
+disk; `/health` continues to report `recording_ok: true` and a running
+`messages_recorded` count, just with nothing on disk to show for it. Leave it
+on by default: replay, and the Phase 5 analysis of what `aero_raw` means in
+2026, both depend on a recording existing.
+
+To free space from old sessions:
+
+```bash
+make clean-recordings
+```
+
+Lists each `recordings/<session_key>` folder with `du -sh` and asks `y/N`
+before deleting it, one folder at a time - it never deletes anything without
+that confirmation.
 
 ### Token rotation
 

@@ -69,6 +69,14 @@ class Settings(BaseSettings):
     # Where recorder.py writes recordings/<session_key>/<topic>.jsonl
     recordings_dir: Path = REPO_ROOT / "recordings"
 
+    recording_enabled: bool = True
+    """Whether the recorder writes to disk at all. Off is for a machine that is
+    short on space and only needs the live dashboard; the FP1 recording that
+    resolves what aero_raw means in 2026, and every replay, both depend on a
+    recording existing, so leave this on unless you have a specific reason not
+    to. When false the recorder still connects and feeds the live adapter -
+    the dashboard keeps working - it just never touches disk."""
+
     recorder_min_free_bytes: int = 500 * 1024 * 1024
     """Below this much free space on the recordings volume, /health reports
     ``disk_low`` and readiness degrades. Recording continues regardless: the

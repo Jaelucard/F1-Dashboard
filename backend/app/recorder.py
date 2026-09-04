@@ -473,7 +473,10 @@ class RawRecorder:
         self._retry_delay = retry_delay_seconds
         self._tokens = token_provider or TokenProvider(self._settings)
         self._client_factory = client_factory or self._default_client
-        self._writer = JsonlWriter(self._settings.recordings_dir)
+        # None when RECORDING_ENABLED=false: the recorder still connects and
+        # feeds the live adapter, it just never touches disk. Logged once in
+        # start(), which is the actual startup of a recording attempt.
+        self._writer = JsonlWriter(self._settings.recordings_dir) if self._settings.recording_enabled else None
 
         self.stats = RecorderStats()
         self._fanout = FanOutQueue(self._settings.fanout_queue_size, on_error=self._subscriber_failed)
@@ -516,6 +519,8 @@ class RawRecorder:
         if self._thread is not None:
             raise RuntimeError("recorder already started")
         self._settings.require_credentials()
+        if self._writer is None:
+            log.warning("recording disabled by RECORDING_ENABLED=false")
         self._stop.clear()
         self._fanout.start()
         self._thread = threading.Thread(
@@ -539,7 +544,8 @@ class RawRecorder:
             self._thread = None
         self._fanout.drain(timeout=min(timeout, 2.0))
         self._fanout.stop(timeout=timeout)
-        self._writer.close()
+        if self._writer is not None:
+            self._writer.close()
         self._tokens.close()
         log.info(
             "recorder stopped after %d message(s) across %d topic(s)%s",
@@ -625,7 +631,8 @@ class RawRecorder:
                 # Refused: brief pause so a permanently bad token does not spin.
                 self._stop.wait(min(self._retry_delay, 1.0))
 
-        self._writer.close()
+        if self._writer is not None:
+            self._writer.close()
 
     def _hold_connection(self) -> None:
         """Stay connected until the token needs rotating, or we are stopping."""
@@ -755,13 +762,19 @@ class RawRecorder:
             session_key = safe_component(decoded.get("session_key"), UNKNOWN_SESSION)
             message_id = decoded.get("_id")
 
-        # Disk first, always.
-        try:
-            self._writer.write(session_key, safe_component(topic, "unknown_topic"), raw.to_line())
-        except RecordingError as exc:
-            self._write_failed(exc, topic)
+        # Disk first, always - unless RECORDING_ENABLED=false, in which case
+        # there is no writer at all. messages_recorded still counts (the
+        # message really was handled) and recording_ok stays true (nothing
+        # is failing; recording was simply never attempted).
+        if self._writer is not None:
+            try:
+                self._writer.write(session_key, safe_component(topic, "unknown_topic"), raw.to_line())
+            except RecordingError as exc:
+                self._write_failed(exc, topic)
+            else:
+                self._write_succeeded()
+                self.stats.messages_recorded += 1
         else:
-            self._write_succeeded()
             self.stats.messages_recorded += 1
 
         self.stats.last_message_at = received_at
@@ -865,7 +878,7 @@ class RawRecorder:
         data = self.stats.snapshot()
         expiry = self._tokens.current_expiry
         data["token_expires_at"] = expiry.isoformat(timespec="seconds") if expiry else None
-        data["open_files"] = self._writer.open_files
+        data["open_files"] = self._writer.open_files if self._writer is not None else 0
         data["subscribers"] = self._fanout.subscriber_count
         data["fanout_dropped"] = self._fanout.dropped
         data["fanout_queue"] = {
@@ -879,7 +892,9 @@ class RawRecorder:
         data["id_tracking"] = ids
         data["messages_possibly_lost"] = ids["messages_possibly_lost"]
         data["may_be_incomplete"] = self.may_be_incomplete
-        free = self._writer.disk_free_bytes()
+        # No writer means nothing is tracking the recordings volume; disk
+        # pressure there is not this process's problem when it never writes.
+        free = self._writer.disk_free_bytes() if self._writer is not None else None
         data["disk_free_bytes"] = free
         data["disk_low"] = free is not None and free < self._settings.recorder_min_free_bytes
         # A flag, never the path: /health is public and the absolute

@@ -541,3 +541,49 @@ def test_stop_returns_promptly_even_while_waiting_to_retry(tmp_path: Path) -> No
     started = time.monotonic()
     recorder.stop(timeout=5)
     assert time.monotonic() - started < 2.0, "stop must interrupt the retry wait"
+
+
+# -- RECORDING_ENABLED=false --------------------------------------------------
+
+
+def test_recording_disabled_writes_no_file_but_still_counts_and_fans_out(tmp_path: Path) -> None:
+    settings = make_settings(tmp_path).model_copy(update={"recording_enabled": False})
+    tokens = FakeTokenProvider()
+    recorder = RawRecorder(settings, tokens)  # type: ignore[arg-type]
+
+    seen: list[RawMessage] = []
+    recorder.add_subscriber(seen.append)
+    recorder.start_fan_out()
+
+    recorder.handle_payload("v1/laps", json.dumps({"session_key": 42, "driver_number": 1}))
+    recorder.drain(timeout=2)
+    recorder.stop(timeout=2)
+
+    assert list(tmp_path.iterdir()) == [], "RECORDING_ENABLED=false must write nothing"
+    assert recorder.stats.messages_recorded == 1, "the message was still handled"
+    assert recorder.stats.recording_ok is True, "nothing failed - recording was never attempted"
+    assert len(seen) == 1, "the live adapter still gets fed"
+
+
+def test_recording_disabled_logs_once_at_startup(tmp_path: Path, caplog: pytest.LogCaptureFixture) -> None:
+    settings = make_settings(tmp_path).model_copy(update={"recording_enabled": False})
+    tokens = FakeTokenProvider()
+    recorder = RawRecorder(settings, tokens, client_factory=lambda: FakeClient())  # type: ignore[arg-type]
+
+    with caplog.at_level(logging.WARNING):
+        recorder.start()
+        recorder.stop(timeout=2)
+
+    matches = [r for r in caplog.records if "recording disabled by RECORDING_ENABLED=false" in r.message]
+    assert len(matches) == 1
+
+
+def test_recording_disabled_health_reports_zero_open_files_and_no_disk_check(tmp_path: Path) -> None:
+    settings = make_settings(tmp_path).model_copy(update={"recording_enabled": False})
+    recorder = RawRecorder(settings, FakeTokenProvider())  # type: ignore[arg-type]
+    recorder.handle_payload("v1/laps", json.dumps({"session_key": 1}))
+
+    health = recorder.health()
+    assert health["open_files"] == 0
+    assert health["disk_free_bytes"] is None
+    assert health["disk_low"] is False
