@@ -1,6 +1,7 @@
 import { useStore } from '../store'
 import { teamColour } from '../lib/teams'
 import { TyreIcon } from './TyreIcon'
+import { MiniSectors } from './MiniSectors'
 import {
   formatGap,
   formatInterval,
@@ -14,7 +15,12 @@ import type { DriverState } from '../types/sessionState'
 
 /**
  * The Tier A leaderboard: POS, team colour bar, DRIVER, TYRE, LAST, BEST, GAP,
- * INT, PIT.
+ * INT, S1, S2, S3, PIT.
+ *
+ * Each sector cell is two lines: the sector time on top, the mini-sector strip
+ * under it. The sector fields come from the lap *in progress* once it has
+ * produced anything, so a cell showing a strip with no time yet is the normal
+ * "sector filling in" state, not missing data.
  *
  * There are deliberately no AERO or OT columns yet. 2026 replaced DRS with
  * Active Aero and Overtake Mode, but the only candidate field OpenF1 exposes is
@@ -70,6 +76,9 @@ export function Leaderboard() {
             <Th className="w-24 text-right">Best</Th>
             <Th className="w-24 text-right">Gap</Th>
             <Th className="w-24 text-right">Int</Th>
+            <Th className="w-20 text-right">S1</Th>
+            <Th className="w-20 text-right">S2</Th>
+            <Th className="w-20 text-right">S3</Th>
             <Th className="w-12 text-center">Pit</Th>
           </tr>
         </thead>
@@ -147,6 +156,10 @@ function Row({
         {formatInterval(driver.interval_ahead)}
       </td>
 
+      <SectorCell column="s1" time={driver.sector_1} segments={driver.segments_sector_1} />
+      <SectorCell column="s2" time={driver.sector_2} segments={driver.segments_sector_2} />
+      <SectorCell column="s3" time={driver.sector_3} segments={driver.segments_sector_3} />
+
       <td data-col="pit" className="py-1.5 text-center">
         {driver.in_pit ? (
           <span className="rounded bg-f1-red px-1.5 py-0.5 text-[10px] font-bold text-white">
@@ -161,6 +174,31 @@ function Row({
         )}
       </td>
     </tr>
+  )
+}
+
+/**
+ * One sector: the time, with the mini-sector strip beneath it.
+ *
+ * The strip is rendered even when the array is empty so the two-line height is
+ * constant and rows do not jump as laps reset.
+ */
+function SectorCell({
+  column,
+  time,
+  segments,
+}: {
+  column: 's1' | 's2' | 's3'
+  time: number | null
+  segments: number[]
+}) {
+  return (
+    <td data-col={column} className="py-1.5 pr-2 align-middle">
+      <div className="flex flex-col items-stretch gap-1">
+        <span className="tnum text-right text-xs">{formatLapTime(time)}</span>
+        <MiniSectors segments={segments} />
+      </div>
+    </td>
   )
 }
 

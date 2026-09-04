@@ -54,7 +54,7 @@ describe('Leaderboard', () => {
   it('renders every Tier A column and no DRS column', () => {
     inject()
     render(<Leaderboard />)
-    for (const heading of ['Pos', 'Driver', 'Tyre', 'Last', 'Best', 'Gap', 'Int', 'Pit']) {
+    for (const heading of ['Pos', 'Driver', 'Tyre', 'Last', 'Best', 'Gap', 'Int', 'S1', 'S2', 'S3', 'Pit']) {
       expect(screen.getByRole('columnheader', { name: heading })).toBeInTheDocument()
     }
     // 2026 has no DRS. These must not exist anywhere, in any casing.
@@ -140,6 +140,43 @@ describe('Leaderboard', () => {
     )!
     expect(cell(slower.name_acronym!, 'last').className).toContain('text-timing-slower')
     expect(cell(slower.name_acronym!, 'best').className).toContain('text-timing-personal')
+  })
+
+  it('shows the mini-sector strip inside each sector cell', () => {
+    inject()
+    render(<Leaderboard />)
+    for (const column of ['s1', 's2', 's3']) {
+      const strip = cell('VER', column).querySelector('[data-testid="mini-sectors"]')
+      expect(strip, `${column} has no mini-sector strip`).not.toBeNull()
+      expect(strip!.querySelectorAll('span').length).toBeGreaterThan(0)
+    }
+  })
+
+  it('keeps the sector cell height when a driver has no segments yet', () => {
+    const bare = snapshot.drivers.map((d) => ({
+      ...d,
+      segments_sector_1: [],
+      segments_sector_2: [],
+      segments_sector_3: [],
+    }))
+    inject({ ...snapshot, drivers: bare })
+    render(<Leaderboard />)
+    const strip = cell('VER', 's1').querySelector('[data-testid="mini-sectors"]')!
+    expect(strip).toBeInTheDocument()
+    expect(strip.querySelectorAll('span')).toHaveLength(0)
+  })
+
+  it('shows the strip with no time while a sector is still filling in', () => {
+    // Sectors come from the lap in progress, so a strip with no time is the
+    // normal "sector under way" state rather than missing data.
+    const filling = snapshot.drivers.map((d) =>
+      d.name_acronym === 'VER' ? { ...d, sector_3: null, segments_sector_3: [2049, 2051] } : d,
+    )
+    inject({ ...snapshot, drivers: filling })
+    render(<Leaderboard />)
+    const s3 = cell('VER', 's3')
+    expect(s3.textContent).toContain('—')
+    expect(s3.querySelectorAll('[data-testid="mini-sectors"] span')).toHaveLength(2)
   })
 
   it('shows a helpful message rather than an empty table before data arrives', () => {

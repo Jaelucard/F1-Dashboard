@@ -96,6 +96,16 @@ class DriverState(Base):
     sector_1: float | None = None
     sector_2: float | None = None
     sector_3: float | None = None
+    segments_sector_1: list[int] = Field(default_factory=list)
+    """Mini-sector status codes for this sector, one per mini-sector.
+
+    OpenF1's own codes, passed through uninterpreted: 2048 yellow, 2049 green,
+    2051 purple, 2064 pit lane, 0 not available; 2050, 2052 and 2068 are
+    undocumented. The array length varies by circuit and by sector (typically
+    7 to 9), so nothing may assume a fixed count. It grows as the car crosses
+    each mini-sector of the lap in progress and resets on the next lap."""
+    segments_sector_2: list[int] = Field(default_factory=list)
+    segments_sector_3: list[int] = Field(default_factory=list)
     is_pit_out_lap: bool = False
 
     compound: str | None = None

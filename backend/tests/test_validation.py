@@ -90,7 +90,11 @@ def test_malformed_fields_are_stripped_and_counted_not_fatal() -> None:
     assert source.stats()["malformed_fields"] == 1
 
     driver = source.snapshot().drivers[0]
-    assert driver.last_lap_duration is None and driver.sector_1 is None
+    assert driver.last_lap_duration is None, "the lap has no usable duration"
+    # The sector time survives and is shown: with lap_duration stripped this is
+    # a lap in progress, and sectors come from the lap in progress so the strip
+    # fills in live. Only the unusable field was lost.
+    assert driver.sector_1 == 28.1
 
 
 def test_a_malformed_revision_does_not_blank_a_valid_value() -> None:

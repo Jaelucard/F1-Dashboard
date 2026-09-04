@@ -320,6 +320,44 @@ def compute_tyre_age(
     return max(0, current_lap - lap_start + age_at_start)
 
 
+SEGMENT_FIELDS = ("segments_sector_1", "segments_sector_2", "segments_sector_3")
+DURATION_FIELDS = ("duration_sector_1", "duration_sector_2", "duration_sector_3")
+
+
+def normalise_segments(value: Any) -> list[int]:
+    """Mini-sector codes as a list of ints. Anything else becomes 0.
+
+    0 is OpenF1's own "not available", so a code we cannot read degrades to the
+    same thing as a code that has not arrived - never to a colour. The codes
+    themselves are passed through uninterpreted: an unknown one is the UI's
+    problem to render neutrally, not the adapter's to guess at.
+
+    Integral floats are kept as ints because a JSON decoder may hand back 2049.0
+    for a whole number, and turning real data into 0 would be worse than the
+    coercion.
+    """
+    if not isinstance(value, list):
+        return []
+    codes: list[int] = []
+    for item in value:
+        if isinstance(item, bool):
+            codes.append(0)
+        elif isinstance(item, int):
+            codes.append(item)
+        elif isinstance(item, float) and item.is_integer():
+            codes.append(int(item))
+        else:
+            codes.append(0)
+    return codes
+
+
+def has_sector_data(lap: Record) -> bool:
+    """True once a lap has produced any sector time or any mini-sector code."""
+    if any(isinstance(lap.get(name), (int, float)) for name in DURATION_FIELDS):
+        return True
+    return any(normalise_segments(lap.get(name)) for name in SEGMENT_FIELDS)
+
+
 def _as_datetime(value: Any) -> datetime | None:
     if not isinstance(value, str) or not value:
         return None
@@ -886,6 +924,15 @@ class OpenF1LiveSource(SessionDataSource):
             {},
         )
 
+        # Sectors and mini-sectors come from the lap in progress as soon as it
+        # has produced anything, so the strip fills in live rather than showing
+        # the previous lap until this one is complete. The upsert on
+        # (driver_number, lap_number) revises that record in place, so the
+        # arrays grow as the car crosses each mini-sector and reset when the
+        # next lap's record arrives. Lap *durations* still come from the last
+        # completed lap: the one in progress has none.
+        lap_for_sectors = latest_lap if has_sector_data(latest_lap) else last_completed
+
         stints = sorted(stints, key=lambda stint: stint.get("stint_number") or 0)
         stint = stints[-1] if stints else {}
         current_lap = latest_lap.get("lap_number")
@@ -906,9 +953,12 @@ class OpenF1LiveSource(SessionDataSource):
             lap_number=current_lap,
             last_lap_duration=last_completed.get("lap_duration"),
             best_lap_duration=min(completed) if completed else None,
-            sector_1=last_completed.get("duration_sector_1"),
-            sector_2=last_completed.get("duration_sector_2"),
-            sector_3=last_completed.get("duration_sector_3"),
+            sector_1=lap_for_sectors.get("duration_sector_1"),
+            sector_2=lap_for_sectors.get("duration_sector_2"),
+            sector_3=lap_for_sectors.get("duration_sector_3"),
+            segments_sector_1=normalise_segments(lap_for_sectors.get("segments_sector_1")),
+            segments_sector_2=normalise_segments(lap_for_sectors.get("segments_sector_2")),
+            segments_sector_3=normalise_segments(lap_for_sectors.get("segments_sector_3")),
             is_pit_out_lap=bool(latest_lap.get("is_pit_out_lap")),
             compound=stint.get("compound"),
             stint_number=stint.get("stint_number"),

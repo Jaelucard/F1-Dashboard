@@ -7,10 +7,12 @@ from datetime import datetime, timezone
 import pytest
 
 from app.adapters.openf1_live import (
+    TOPIC_LAPS,
     OpenF1LiveSource,
     TopicStore,
     compute_tyre_age,
     natural_key,
+    normalise_segments,
     record_key,
 )
 from scripts.sample_data import build_messages, build_source
@@ -360,3 +362,118 @@ def test_sample_data_places_every_car_but_the_pitted_one_on_the_loop() -> None:
     assert len(without) == 1 and without[0].in_pit is True
     # No bundled outline for the sample session: the map must use the fallback trace.
     assert state.session is not None and state.session.circuit_key is None
+
+
+# -- mini-sectors ----------------------------------------------------------------
+
+
+def _lap(number: int, **fields: object) -> dict[str, object]:
+    return {"session_key": 1, "driver_number": 16, "lap_number": number, **fields}
+
+
+def test_sectors_come_from_the_lap_in_progress_while_last_lap_stays_completed() -> None:
+    """The strip must fill in live. Reading sectors from the last *completed*
+    lap would leave it showing the previous lap until this one finished."""
+    source = OpenF1LiveSource()
+    source.ingest(TOPIC_LAPS, _lap(11, _id=1, lap_duration=80.5,
+                                   duration_sector_1=28.0, duration_sector_2=26.0,
+                                   duration_sector_3=26.5,
+                                   segments_sector_1=[2049] * 8))
+    # Lap 12 is under way: mini-sectors only, no times at all yet.
+    source.ingest(TOPIC_LAPS, _lap(12, _id=2, segments_sector_1=[2049, 2051, 2048]))
+
+    driver = source.snapshot().drivers[0]
+    assert driver.segments_sector_1 == [2049, 2051, 2048], "the lap in progress"
+    assert driver.sector_1 is None, "no sector 1 time on the lap in progress yet"
+    assert driver.last_lap_duration == 80.5, "still the completed lap"
+    assert driver.best_lap_duration == 80.5
+
+
+def test_a_lap_in_progress_with_a_sector_time_but_no_segments_is_still_chosen() -> None:
+    source = OpenF1LiveSource()
+    source.ingest(TOPIC_LAPS, _lap(11, _id=1, lap_duration=80.5, duration_sector_1=28.0))
+    source.ingest(TOPIC_LAPS, _lap(12, _id=2, duration_sector_1=27.4))
+
+    driver = source.snapshot().drivers[0]
+    assert driver.sector_1 == 27.4
+    assert driver.last_lap_duration == 80.5
+
+
+def test_a_latest_lap_with_nothing_yet_falls_back_to_the_completed_lap() -> None:
+    """A bare lap record (a new lap has started, nothing timed) must not blank
+    the strip - the previous lap's sectors stay up until there is a reading."""
+    source = OpenF1LiveSource()
+    source.ingest(TOPIC_LAPS, _lap(11, _id=1, lap_duration=80.5, duration_sector_2=26.0,
+                                   segments_sector_2=[2051] * 7))
+    source.ingest(TOPIC_LAPS, _lap(12, _id=2))
+
+    driver = source.snapshot().drivers[0]
+    assert driver.sector_2 == 26.0
+    assert driver.segments_sector_2 == [2051] * 7
+
+
+def test_an_empty_segments_array_does_not_count_as_sector_data() -> None:
+    source = OpenF1LiveSource()
+    source.ingest(TOPIC_LAPS, _lap(11, _id=1, lap_duration=80.5, duration_sector_3=26.5))
+    source.ingest(TOPIC_LAPS, _lap(12, _id=2, segments_sector_1=[], segments_sector_2=[]))
+
+    assert source.snapshot().drivers[0].sector_3 == 26.5
+
+
+def test_non_integer_segment_codes_are_coerced_to_zero() -> None:
+    """0 is OpenF1's own "not available", so an unreadable code degrades to
+    "nothing known" rather than to a colour."""
+    source = OpenF1LiveSource()
+    source.ingest(TOPIC_LAPS, _lap(
+        7, _id=1, lap_duration=80.0,
+        segments_sector_1=[2049, "2051", None, 2048, True, 3.5, 2064.0],
+    ))
+    driver = source.snapshot().drivers[0]
+    assert driver.segments_sector_1 == [2049, 0, 0, 2048, 0, 0, 2064]
+
+
+def test_segments_default_to_an_empty_list_when_absent() -> None:
+    source = OpenF1LiveSource()
+    source.ingest(TOPIC_LAPS, _lap(7, _id=1, lap_duration=80.0))
+    driver = source.snapshot().drivers[0]
+    assert driver.segments_sector_1 == []
+    assert driver.segments_sector_2 == []
+    assert driver.segments_sector_3 == []
+
+
+def test_a_fresh_lap_record_replaces_the_previous_lap_segments() -> None:
+    source = OpenF1LiveSource()
+    source.ingest(TOPIC_LAPS, _lap(11, _id=1, lap_duration=80.5, segments_sector_1=[2051] * 8))
+    assert source.snapshot().drivers[0].segments_sector_1 == [2051] * 8
+
+    source.ingest(TOPIC_LAPS, _lap(12, _id=2, segments_sector_1=[2048]))
+    assert source.snapshot().drivers[0].segments_sector_1 == [2048], "reset, not appended"
+
+
+def test_segments_grow_in_place_as_the_car_crosses_each_mini_sector() -> None:
+    """The upsert on (driver_number, lap_number) revises the lap in place, so a
+    revision carrying a longer array must not be merged element-wise."""
+    source = OpenF1LiveSource()
+    source.ingest(TOPIC_LAPS, _lap(12, _id=1, segments_sector_1=[2049, 2049]))
+    source.ingest(TOPIC_LAPS, _lap(12, _id=2, segments_sector_1=[2049, 2049, 2051, 2048]))
+
+    assert source.snapshot().drivers[0].segments_sector_1 == [2049, 2049, 2051, 2048]
+
+
+def test_segment_array_lengths_are_not_assumed_to_match_each_other() -> None:
+    source = OpenF1LiveSource()
+    source.ingest(TOPIC_LAPS, _lap(
+        9, _id=1, lap_duration=80.0,
+        segments_sector_1=[2049] * 8, segments_sector_2=[2049] * 7, segments_sector_3=[2049] * 9,
+    ))
+    driver = source.snapshot().drivers[0]
+    assert (len(driver.segments_sector_1), len(driver.segments_sector_2), len(driver.segments_sector_3)) == (8, 7, 9)
+
+
+def test_normalise_segments_handles_anything_openf1_might_send() -> None:
+    assert normalise_segments([2048, 2049, 2051, 2064, 0]) == [2048, 2049, 2051, 2064, 0]
+    assert normalise_segments([2049.0]) == [2049], "a JSON decoder may hand back a whole float"
+    assert normalise_segments([]) == []
+    assert normalise_segments(None) == []
+    assert normalise_segments("2049") == [], "not a list at all"
+    assert normalise_segments({"a": 1}) == []

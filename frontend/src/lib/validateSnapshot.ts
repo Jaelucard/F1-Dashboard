@@ -21,7 +21,7 @@ export type ValidationResult =
 const MODES = new Set(['live', 'replay', 'historical', 'demo', 'idle'])
 const FEED_STATES = new Set(['offline', 'connecting', 'auth_failed', 'connected', 'live', 'stale'])
 
-type Kind = 'number' | 'string' | 'boolean' | 'gap'
+type Kind = 'number' | 'string' | 'boolean' | 'gap' | 'ints'
 
 /** Every DriverState field the leaderboard reads, and what it may hold (null allowed). */
 const DRIVER_FIELDS: Record<keyof Omit<DriverState, 'driver_number'>, Kind> = {
@@ -40,6 +40,9 @@ const DRIVER_FIELDS: Record<keyof Omit<DriverState, 'driver_number'>, Kind> = {
   sector_1: 'number',
   sector_2: 'number',
   sector_3: 'number',
+  segments_sector_1: 'ints',
+  segments_sector_2: 'ints',
+  segments_sector_3: 'ints',
   is_pit_out_lap: 'boolean',
   compound: 'string',
   stint_number: 'number',
@@ -70,6 +73,9 @@ const DRIVER_DEFAULTS: Record<keyof Omit<DriverState, 'driver_number'>, unknown>
   sector_1: null,
   sector_2: null,
   sector_3: null,
+  segments_sector_1: [],
+  segments_sector_2: [],
+  segments_sector_3: [],
   is_pit_out_lap: false,
   compound: null,
   stint_number: null,
@@ -99,6 +105,10 @@ function matches(kind: Kind, value: unknown): boolean {
       return typeof value === 'boolean'
     case 'gap':
       return (typeof value === 'number' && Number.isFinite(value)) || typeof value === 'string'
+    case 'ints':
+      // Mini-sector codes. Length varies by circuit and sector, so only the
+      // element type is checked, never a count.
+      return Array.isArray(value) && value.every((code) => typeof code === 'number' && Number.isFinite(code))
   }
 }
 
@@ -114,7 +124,12 @@ function validateDriver(value: unknown, index: number): { ok: true; driver: Driv
     if (!matches(kind, present)) {
       return { ok: false, reason: `drivers[${index}].${field} is not a ${kind}` }
     }
-    driver[field] = present === undefined ? DRIVER_DEFAULTS[field] : present
+    // A null segments array would break the strip's map, so an absent *or*
+    // null value falls back to the default (an empty array).
+    driver[field] =
+      present === undefined || (present === null && kind === 'ints')
+        ? DRIVER_DEFAULTS[field]
+        : present
   }
   return { ok: true, driver: driver as unknown as DriverState }
 }

@@ -52,6 +52,18 @@ export interface DriverState {
   sector_1: number | null
   sector_2: number | null
   sector_3: number | null
+  /**
+   * Mini-sector status codes for this sector, one per mini-sector.
+   *
+   * OpenF1's own codes, passed through uninterpreted: 2048 yellow, 2049 green,
+   * 2051 purple, 2064 pit lane, 0 not available; 2050, 2052 and 2068 are
+   * undocumented. The array length varies by circuit and by sector (typically
+   * 7 to 9), so nothing may assume a fixed count. It grows as the car crosses
+   * each mini-sector of the lap in progress and resets on the next lap.
+   */
+  segments_sector_1: number[]
+  segments_sector_2: number[]
+  segments_sector_3: number[]
   is_pit_out_lap: boolean
   compound: string | null
   stint_number: number | null

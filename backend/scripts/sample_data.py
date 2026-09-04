@@ -97,6 +97,27 @@ def build_loop(points: int = 400) -> list[tuple[float, float]]:
     return out
 
 
+def build_segments(position: int, grid_size: int) -> list[list[int]]:
+    """Plausible mini-sector codes for one demo driver, three sectors' worth.
+
+    Mixed 2048 (yellow) / 2049 (green) / 2051 (purple) so every colour in the
+    strip is exercised, with lengths differing per sector because the real
+    arrays do - a fixed count is exactly the assumption this data exists to
+    break. The last driver ends sector 3 in the pit lane (2064).
+    """
+    lengths = (8, 7, 9)
+    sectors: list[list[int]] = []
+    for index, length in enumerate(lengths):
+        codes = [
+            2051 if (position + index + i) % 7 == 0 else 2049 if (position + i) % 3 else 2048
+            for i in range(length)
+        ]
+        sectors.append(codes)
+    if position == grid_size:
+        sectors[2][-1] = 2064
+    return sectors
+
+
 def build_messages() -> list[tuple[str, dict[str, Any]]]:
     """Every message the injector feeds, in arrival order."""
     messages: list[tuple[str, dict[str, Any]]] = [
@@ -126,6 +147,7 @@ def build_messages() -> list[tuple[str, dict[str, Any]]]:
 
     base_lap = 79.5
     for position, driver in enumerate(grid, start=1):
+        segments = build_segments(position, len(grid))
         number = driver["driver_number"]
         lap_time = round(base_lap + position * 0.181, 3)
 
@@ -149,6 +171,8 @@ def build_messages() -> list[tuple[str, dict[str, Any]]]:
                          "lap_duration": round(lap_time + 0.9, 3),
                          "duration_sector_1": 28.0, "duration_sector_2": 26.0,
                          "duration_sector_3": 25.5, "is_pit_out_lap": False,
+                         "segments_sector_1": segments[0], "segments_sector_2": segments[1],
+                         "segments_sector_3": segments[2],
                          "date_start": "2026-09-04T11:40:00+00:00", "session_key": 9999})
         )
 
@@ -160,12 +184,14 @@ def build_messages() -> list[tuple[str, dict[str, Any]]]:
                          "driver_number": number, "lap_number": 12,
                          "duration_sector_1": 27.8, "lap_duration": None,
                          "is_pit_out_lap": False,
+                         "segments_sector_1": segments[0],
                          "date_start": "2026-09-04T11:44:00+00:00", "session_key": 9999})
         )
         messages.append(
             ("v1/laps", {"_key": f"lap-{number}-12", "_id": 3000 + number,
                          "driver_number": number, "lap_number": 12,
                          "duration_sector_2": 25.9, "duration_sector_3": 25.4,
+                         "segments_sector_2": segments[1], "segments_sector_3": segments[2],
                          "lap_duration": lap_time, "session_key": 9999})
         )
 
@@ -177,7 +203,9 @@ def build_messages() -> list[tuple[str, dict[str, Any]]]:
                              "driver_number": number, "lap_number": 13,
                              "lap_duration": round(lap_time + 1.7, 3),
                              "duration_sector_1": 28.4, "duration_sector_2": 26.3,
-                             "duration_sector_3": 25.9, "is_pit_out_lap": False,
+                             "duration_sector_3": None, "is_pit_out_lap": False,
+                             "segments_sector_1": segments[0], "segments_sector_2": segments[1],
+                             "segments_sector_3": segments[2][:2],
                              "date_start": "2026-09-04T11:46:00+00:00", "session_key": 9999})
             )
 
