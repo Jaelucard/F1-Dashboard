@@ -1,13 +1,13 @@
 import { useEffect, useState } from 'react'
 import { selectDrivers, selectSession, useStore } from '../store'
 import { teamColour } from '../lib/teams'
-import { useTrackTrace, type Point } from '../lib/useTrackTrace'
+import { useTrackTrace, type Point, type Trace } from '../lib/useTrackTrace'
 import { loadOutline, type Outline } from '../data/circuits'
 import type { DriverState } from '../types/sessionState'
 
 /**
- * The track map: a bundled circuit outline (or, failing that, the trace of
- * where the cars have been) with one dot per car in team colour.
+ * The track map: a bundled circuit outline (or, failing that, the trace each
+ * car has left behind) with one dot per car in team colour.
  *
  * Coordinates are OpenF1's own `location` frame, in which y grows northwards;
  * SVG's y grows downwards, so y is negated everywhere. The viewBox is fitted
@@ -26,7 +26,7 @@ interface Bounds {
   height: number
 }
 
-function bounds(points: Point[], cars: DriverState[]): Bounds | null {
+function bounds(lines: Point[][], cars: DriverState[]): Bounds | null {
   let minX = Infinity
   let maxX = -Infinity
   let minY = Infinity
@@ -37,7 +37,7 @@ function bounds(points: Point[], cars: DriverState[]): Bounds | null {
     if (-y < minY) minY = -y
     if (-y > maxY) maxY = -y
   }
-  for (const [x, y] of points) consider(x, y)
+  for (const line of lines) for (const [x, y] of line) consider(x, y)
   for (const car of cars) consider(car.x as number, car.y as number)
   if (!Number.isFinite(minX)) return null
   const spanX = Math.max(maxX - minX, 1)
@@ -69,10 +69,12 @@ export function TrackMap() {
 
   // Only trust an outline that was loaded for the circuit being shown.
   const outline = loaded.key === circuitKey ? loaded.outline : null
-  const trace = useTrackTrace()
-  const points = outline?.points ?? trace
+  const traces = useTrackTrace()
+  // The bundled outline is the track. The per-car traces only stand in for it
+  // when there is none, and are never drawn alongside it.
+  const lines: Point[][] = outline ? [outline.points] : traces.map((t) => t.points)
   const cars = drivers.filter((d) => d.x != null && d.y != null)
-  const box = bounds(points, cars)
+  const box = bounds(lines, cars)
 
   if (box === null) {
     return (
@@ -95,10 +97,10 @@ export function TrackMap() {
         role="img"
         aria-label={outline?.circuit_short_name ?? session?.circuit_short_name ?? 'track'}
       >
-        {points.length > 1 && (
+        {outline !== null && outline.points.length > 1 && (
           <path
             data-testid="outline"
-            d={pathFrom(points, outline !== null)}
+            d={pathFrom(outline.points, true)}
             fill="none"
             stroke="var(--color-f1-line)"
             strokeWidth={stroke * 2.5}
@@ -106,6 +108,22 @@ export function TrackMap() {
             strokeLinecap="round"
           />
         )}
+        {outline === null &&
+          traces.map((trace: Trace) =>
+            trace.points.length > 1 ? (
+              <path
+                key={trace.driver_number}
+                data-testid="trace"
+                data-driver={trace.driver_number}
+                d={pathFrom(trace.points, false)}
+                fill="none"
+                stroke="var(--color-f1-line)"
+                strokeWidth={stroke * 2.5}
+                strokeLinejoin="round"
+                strokeLinecap="round"
+              />
+            ) : null,
+          )}
         {cars.map((car) => (
           <g
             key={car.driver_number}

@@ -70,16 +70,69 @@ describe('TrackMap', () => {
   })
 
   it('falls back to tracing car positions when there is no outline', async () => {
+    const shift = (by: number, at: string) =>
+      snapshot.drivers.map((d) => (d.x == null ? d : { ...d, x: d.x + by, location_at: at }))
+
     inject(withCircuit(null))
     render(<TrackMap />)
-    await waitFor(() => expect(screen.getByTestId('outline')).toBeInTheDocument())
     expect(screen.getByText('tracing')).toBeInTheDocument()
-    const before = screen.getByTestId('outline').getAttribute('d')!
-    const moved = snapshot.drivers.map((d) =>
-      d.x == null ? d : { ...d, x: d.x + 10, location_at: '2026-09-04T11:46:00+00:00' },
-    )
+    expect(screen.queryByTestId('outline')).toBeNull()
+    // One position per car is a dot, not a line: nothing to draw yet.
+    expect(screen.queryAllByTestId('trace')).toHaveLength(0)
+
+    act(() => inject(withCircuit(null, shift(10, '2026-09-04T11:46:00+00:00'))))
+    const cars = snapshot.drivers.filter((d) => d.x != null).length
+    await waitFor(() => expect(screen.getAllByTestId('trace')).toHaveLength(cars))
+    const before = screen.getAllByTestId('trace').map((path) => path.getAttribute('d')!.length)
+
+    act(() => inject(withCircuit(null, shift(20, '2026-09-04T11:47:00+00:00'))))
+    await waitFor(() => {
+      const after = screen.getAllByTestId('trace').map((path) => path.getAttribute('d')!.length)
+      expect(after.every((len, i) => len > before[i])).toBe(true)
+    })
+  })
+
+  it('traces each car on its own line, never joining one car to another', async () => {
+    // The bug this pins: a single shared list of points interleaves the cars,
+    // so one polyline zigzags between them instead of drawing the circuit.
+    const two: DriverState[] = [
+      { ...snapshot.drivers[0], driver_number: 1, x: 0, y: 0, in_pit: false, location_at: 'a' },
+      { ...snapshot.drivers[1], driver_number: 44, x: 5000, y: 5000, in_pit: false, location_at: 'a' },
+    ]
+    inject(withCircuit(null, two))
+    render(<TrackMap />)
+    const moved: DriverState[] = [
+      { ...two[0], x: 10, y: 10, location_at: 'b' },
+      { ...two[1], x: 5010, y: 5010, location_at: 'b' },
+    ]
     act(() => inject(withCircuit(null, moved)))
-    await waitFor(() => expect(screen.getByTestId('outline').getAttribute('d')!.length).toBeGreaterThan(before.length))
+
+    await waitFor(() => expect(screen.getAllByTestId('trace')).toHaveLength(2))
+    const paths = screen.getAllByTestId('trace')
+    const one = paths.find((p) => p.getAttribute('data-driver') === '1')!
+    const other = paths.find((p) => p.getAttribute('data-driver') === '44')!
+    expect(one.getAttribute('d')).toBe('M0 0 L10 -10')
+    expect(other.getAttribute('d')).toBe('M5000 -5000 L5010 -5010')
+    // Neither line may hold a point belonging to the other car.
+    expect(one.getAttribute('d')).not.toContain('5000')
+    expect(other.getAttribute('d')).not.toContain('M0 0')
+  })
+
+  it('draws no car traces once the bundled outline is in', async () => {
+    loadOutlineMock.mockResolvedValue({
+      circuit_key: 39,
+      circuit_short_name: 'Monza',
+      source_session_key: 9912,
+      points: [
+        [0, 0],
+        [100, 0],
+        [100, 50],
+      ],
+    })
+    inject(withCircuit(39))
+    render(<TrackMap />)
+    await waitFor(() => expect(screen.getByTestId('outline')).toBeInTheDocument())
+    expect(screen.queryAllByTestId('trace')).toHaveLength(0)
   })
 
   it('shows an empty state before any location arrives', () => {
@@ -88,5 +141,6 @@ describe('TrackMap', () => {
     render(<TrackMap />)
     expect(screen.getByText('Waiting for location data')).toBeInTheDocument()
     expect(screen.queryByTestId('outline')).toBeNull()
+    expect(screen.queryAllByTestId('trace')).toHaveLength(0)
   })
 })
