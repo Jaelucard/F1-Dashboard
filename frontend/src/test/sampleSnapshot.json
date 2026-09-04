@@ -1416,6 +1416,81 @@
     25.9,
     25.4
   ],
+  "sector_flags": [
+    {
+      "sector": 3,
+      "flag": "DOUBLE YELLOW",
+      "since": "2026-09-04T11:46:02+00:00"
+    },
+    {
+      "sector": 7,
+      "flag": "YELLOW",
+      "since": "2026-09-04T11:46:05+00:00"
+    }
+  ],
+  "sector_leaders": [
+    [
+      {
+        "driver_number": 100,
+        "name_acronym": "VER",
+        "team_colour": "4781D7",
+        "time": 27.8
+      },
+      {
+        "driver_number": 101,
+        "name_acronym": "LAW",
+        "team_colour": "4781D7",
+        "time": 27.8
+      },
+      {
+        "driver_number": 102,
+        "name_acronym": "LEC",
+        "team_colour": "ED1131",
+        "time": 27.8
+      }
+    ],
+    [
+      {
+        "driver_number": 100,
+        "name_acronym": "VER",
+        "team_colour": "4781D7",
+        "time": 25.9
+      },
+      {
+        "driver_number": 101,
+        "name_acronym": "LAW",
+        "team_colour": "4781D7",
+        "time": 25.9
+      },
+      {
+        "driver_number": 102,
+        "name_acronym": "LEC",
+        "team_colour": "ED1131",
+        "time": 25.9
+      }
+    ],
+    [
+      {
+        "driver_number": 100,
+        "name_acronym": "VER",
+        "team_colour": "4781D7",
+        "time": 25.4
+      },
+      {
+        "driver_number": 101,
+        "name_acronym": "LAW",
+        "team_colour": "4781D7",
+        "time": 25.4
+      },
+      {
+        "driver_number": 102,
+        "name_acronym": "LEC",
+        "team_colour": "ED1131",
+        "time": 25.4
+      }
+    ]
+  ],
+  "safety_car": "VSC DEPLOYED",
   "race_control": [
     {
       "date": "2026-09-04T11:30:00+00:00",
@@ -1432,10 +1507,60 @@
       "category": "Flag",
       "flag": "YELLOW",
       "scope": "Track",
+      "sector": null,
+      "lap_number": null,
+      "driver_number": null,
+      "message": "YELLOW FLAG DEPLOYED"
+    },
+    {
+      "date": "2026-09-04T11:46:02+00:00",
+      "category": "Flag",
+      "flag": "DOUBLE YELLOW",
+      "scope": "Sector",
       "sector": 3,
       "lap_number": null,
       "driver_number": null,
-      "message": "YELLOW IN TRACK SECTOR 3"
+      "message": "DOUBLE YELLOW IN TRACK SECTOR 3"
+    },
+    {
+      "date": "2026-09-04T11:46:05+00:00",
+      "category": "Flag",
+      "flag": "YELLOW",
+      "scope": "Sector",
+      "sector": 7,
+      "lap_number": null,
+      "driver_number": null,
+      "message": "YELLOW IN TRACK SECTOR 7"
+    },
+    {
+      "date": "2026-09-04T11:46:10+00:00",
+      "category": "SafetyCar",
+      "flag": null,
+      "scope": null,
+      "sector": null,
+      "lap_number": null,
+      "driver_number": null,
+      "message": "VIRTUAL SAFETY CAR DEPLOYED"
+    },
+    {
+      "date": "2026-09-04T11:46:12+00:00",
+      "category": "Flag",
+      "flag": "BLUE",
+      "scope": "Driver",
+      "sector": null,
+      "lap_number": null,
+      "driver_number": 101,
+      "message": "BLUE FLAG"
+    },
+    {
+      "date": "2026-09-04T11:46:20+00:00",
+      "category": "Flag",
+      "flag": "BLACK AND WHITE",
+      "scope": "Driver",
+      "sector": null,
+      "lap_number": null,
+      "driver_number": 105,
+      "message": "BLACK AND WHITE FLAG - TRACK LIMITS"
     }
   ],
   "recorder": {
@@ -1472,7 +1597,7 @@
     "sessions_retained": [
       9999
     ],
-    "messages_seen": 205,
+    "messages_seen": 210,
     "quarantined_records": 0,
     "malformed_fields": 0,
     "late_session_messages": 0,

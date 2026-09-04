@@ -211,6 +211,16 @@ export function validateSnapshot(input: unknown): ValidationResult {
   ) {
     return { ok: false, reason: 'session_best_sectors is not an array of number/null' }
   }
+  if (input.sector_flags !== undefined && !Array.isArray(input.sector_flags)) {
+    return { ok: false, reason: 'sector_flags is not an array' }
+  }
+  if (!matches('string', input.safety_car)) return { ok: false, reason: 'safety_car is not a string' }
+  if (
+    input.sector_leaders !== undefined &&
+    !(Array.isArray(input.sector_leaders) && input.sector_leaders.every((s) => Array.isArray(s)))
+  ) {
+    return { ok: false, reason: 'sector_leaders is not an array of arrays' }
+  }
   if (input.recorder !== undefined && input.recorder !== null && !isObject(input.recorder)) {
     return { ok: false, reason: 'recorder is not an object' }
   }
@@ -250,6 +260,9 @@ export function validateSnapshot(input: unknown): ValidationResult {
     session_best_sectors:
       (input.session_best_sectors as SessionState['session_best_sectors'] | undefined) ??
       [null, null, null],
+    sector_flags: (input.sector_flags as SessionState['sector_flags'] | undefined) ?? [],
+    safety_car: (input.safety_car as string | null | undefined) ?? null,
+    sector_leaders: (input.sector_leaders as SessionState['sector_leaders'] | undefined) ?? [[], [], []],
     race_control: (input.race_control as SessionState['race_control'] | undefined) ?? [],
     recorder: (input.recorder as SessionState['recorder'] | undefined) ?? null,
     feed: feed.feed,

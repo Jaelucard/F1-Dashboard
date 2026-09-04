@@ -184,6 +184,23 @@ export interface ReplayInfo {
   ingest_errors: number
 }
 
+/** One marshal sector currently under yellow or double yellow. */
+export interface SectorFlag {
+  sector: number
+  /** "YELLOW" or "DOUBLE YELLOW". */
+  flag: string
+  /** `date` of the race control record that raised it. */
+  since: string | null
+}
+
+/** One driver's place on a sector's fastest-three leaderboard. */
+export interface SectorLeader {
+  driver_number: number
+  name_acronym: string | null
+  team_colour: string | null
+  time: number
+}
+
 /** Identity of the session being shown. From the v1/sessions topic. */
 export interface SessionInfo {
   session_key: number | null
@@ -223,6 +240,24 @@ export interface SessionState {
    * can go purple without the frontend rescanning every row.
    */
   session_best_sectors: (number | null)[]
+  /**
+   * Marshal sectors currently showing yellow or double yellow, ordered by
+   * sector number. A sector clears on a later CLEAR/GREEN for that same
+   * sector, or on any Track-scope CLEAR/GREEN, which clears every sector.
+   */
+  sector_flags: SectorFlag[]
+  /**
+   * [sector 1, sector 2, sector 3] leaderboards: up to three fastest drivers
+   * each, ranked ascending by `best_sector_n`. Reuses the values already
+   * computed for the drivers list - no separate lap scan.
+   */
+  sector_leaders: SectorLeader[][]
+  /**
+   * "SC DEPLOYED", "VSC DEPLOYED", "SC IN THIS LAP" or "VSC ENDING", derived
+   * from race control SafetyCar messages. Cleared by a Track-scope GREEN or
+   * CLEAR arriving after the last SafetyCar record.
+   */
+  safety_car: string | null
   race_control: RaceControlMessage[]
   recorder: RecorderInfo | null
   feed: FeedInfo | null

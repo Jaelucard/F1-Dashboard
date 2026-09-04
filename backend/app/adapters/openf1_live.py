@@ -51,6 +51,8 @@ from app.models import (
     DriverState,
     RaceControlMessage,
     RecorderInfo,
+    SectorFlag,
+    SectorLeader,
     SessionInfo,
     SessionState,
 )
@@ -99,6 +101,28 @@ UNKNOWN_TOPIC_LIMIT = 200
 RACE_CONTROL_LIMIT = 60
 
 FLAG_CLEARING = {"CLEAR", "GREEN"}
+SECTOR_YELLOWS = {"YELLOW", "DOUBLE YELLOW"}
+
+
+def _safety_car_label(message: str) -> str | None:
+    """Map one SafetyCar-category message to its short banner text.
+
+    Order matters: "VIRTUAL SAFETY CAR DEPLOYED" also contains the substring
+    "SAFETY CAR DEPLOYED", so the virtual variants are checked first, or a VSC
+    deployment would be misread as a full safety car. A message that matches
+    none of the four known shapes returns None and leaves the current state
+    untouched, rather than guessing or clearing it.
+    """
+    text = message.upper()
+    if "VIRTUAL SAFETY CAR DEPLOYED" in text:
+        return "VSC DEPLOYED"
+    if "VIRTUAL SAFETY CAR ENDING" in text:
+        return "VSC ENDING"
+    if "SAFETY CAR DEPLOYED" in text:
+        return "SC DEPLOYED"
+    if "SAFETY CAR IN THIS LAP" in text:
+        return "SC IN THIS LAP"
+    return None
 
 # Fields that carry no session information on their own.
 META_FIELDS = frozenset({"_key", "_id", "session_key", "meeting_key"})
@@ -602,6 +626,19 @@ def _new_store(topic: str) -> Store:
 
 
 @dataclass
+class RaceControlState:
+    """Everything ``_build_race_control_state`` derives from race control in
+    one pass: the current track flag, session status, the 2026 partial-aero
+    badge, active marshal-sector yellows, and the safety car / VSC banner."""
+
+    flag: str | None
+    status: str | None
+    partial_aero: bool
+    sector_flags: list[SectorFlag]
+    safety_car: str | None
+
+
+@dataclass
 class SessionBucket:
     """Everything received for one ``session_key``."""
 
@@ -827,7 +864,7 @@ class OpenF1LiveSource(SessionDataSource):
         with self._lock:
             session = self._build_session()
             drivers = self._build_drivers(session.session_type if session is not None else None)
-            flag, status, partial_aero = self._build_race_control_state()
+            rc_state = self._build_race_control_state()
             best = [d.best_lap_duration for d in drivers if d.best_lap_duration]
 
             return SessionState(
@@ -837,11 +874,14 @@ class OpenF1LiveSource(SessionDataSource):
                 credentials_present=self._credentials_present,
                 session=session,
                 drivers=drivers,
-                track_flag=flag,
-                session_status=status,
-                partial_aero=partial_aero,
+                track_flag=rc_state.flag,
+                session_status=rc_state.status,
+                partial_aero=rc_state.partial_aero,
                 session_best_lap=min(best) if best else None,
                 session_best_sectors=self._session_best_sectors(drivers),
+                sector_flags=rc_state.sector_flags,
+                safety_car=rc_state.safety_car,
+                sector_leaders=self._sector_leaders(drivers),
                 race_control=self._build_race_control_messages(),
                 recorder=recorder,
                 adapter=self._adapter_info(),
@@ -854,6 +894,28 @@ class OpenF1LiveSource(SessionDataSource):
             values = [v for d in drivers if (v := getattr(d, field_name)) is not None]
             result.append(min(values) if values else None)
         return result
+
+    @staticmethod
+    def _sector_leaders(drivers: list[DriverState]) -> list[list[SectorLeader]]:
+        """Up to three fastest drivers per sector, from the ``best_sector_n``
+        values already on each ``DriverState`` - no separate lap scan. A driver
+        with no time for a sector is simply absent from that sector's list."""
+        leaders: list[list[SectorLeader]] = []
+        for field_name in ("best_sector_1", "best_sector_2", "best_sector_3"):
+            ranked = sorted(
+                (d for d in drivers if getattr(d, field_name) is not None),
+                key=lambda d: getattr(d, field_name),
+            )
+            leaders.append([
+                SectorLeader(
+                    driver_number=d.driver_number,
+                    name_acronym=d.name_acronym,
+                    team_colour=d.team_colour,
+                    time=getattr(d, field_name),
+                )
+                for d in ranked[:3]
+            ])
+        return leaders
 
     def _build_session(self) -> SessionInfo | None:
         records = self._records(TOPIC_SESSIONS)
@@ -1064,19 +1126,46 @@ class OpenF1LiveSource(SessionDataSource):
                 log.exception("could not build RaceControlMessage")
         return out
 
-    def _build_race_control_state(self) -> tuple[str | None, str | None, bool]:
-        """Current track flag, session status, and the 2026 partial-aero badge."""
+    def _build_race_control_state(self) -> RaceControlState:
+        """Current track flag, session status, the 2026 partial-aero badge,
+        active marshal-sector yellows, and the safety car / VSC banner.
+
+        One pass over race control in date order, because every one of these
+        is "whatever the most recent applicable record said" and a sector or
+        the safety car can only be cleared by a record that arrived after the
+        one that set it.
+        """
         flag: str | None = None
         status: str | None = None
         partial_aero = False
+        safety_car: str | None = None
+        sectors: dict[int, SectorFlag] = {}
 
         for record in self._sorted_race_control():
             category = record.get("category")
-            if category == "Flag" and record.get("scope") == "Track":
-                value = record.get("flag")
+            scope = record.get("scope")
+            value = record.get("flag")
+
+            if category == "Flag" and scope == "Track":
                 flag = None if value in FLAG_CLEARING else value
+                if value in FLAG_CLEARING:
+                    # A Track-scope CLEAR/GREEN clears every marshal sector and,
+                    # if it arrives after the last SafetyCar record, the banner.
+                    sectors = {}
+                    safety_car = None
+            elif category == "Flag" and scope == "Sector":
+                sector = record.get("sector")
+                if isinstance(sector, int):
+                    if value in SECTOR_YELLOWS:
+                        sectors[sector] = SectorFlag(sector=sector, flag=value, since=record.get("date"))
+                    elif value in FLAG_CLEARING:
+                        sectors.pop(sector, None)
             elif category == "SessionStatus":
                 status = record.get("message")
+            elif category == "SafetyCar":
+                label = _safety_car_label(str(record.get("message") or ""))
+                if label is not None:
+                    safety_car = label
 
             # 2026: race control may enable front-Straight/rear-Corner in the
             # wet. Detected from the message text because there is no dedicated
@@ -1092,7 +1181,13 @@ class OpenF1LiveSource(SessionDataSource):
                 elif "ENABLED" in message or "PARTIAL" in message:
                     partial_aero = True
 
-        return flag, status, partial_aero
+        return RaceControlState(
+            flag=flag,
+            status=status,
+            partial_aero=partial_aero,
+            sector_flags=sorted(sectors.values(), key=lambda s: s.sector),
+            safety_car=safety_car,
+        )
 
     # -- introspection ------------------------------------------------------
 

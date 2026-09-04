@@ -1,14 +1,16 @@
 import { useSessionSocket } from './lib/useSessionSocket'
 import { StatusStrip } from './components/StatusStrip'
 import { Leaderboard } from './components/Leaderboard'
+import { FlagPanel } from './components/FlagPanel'
 import { TrackMap } from './components/TrackMap'
+import { SectorBests } from './components/SectorBests'
 import { ReplayBar } from './components/ReplayBar'
 
 /**
- * Shell: status strip across the top, leaderboard filling the left, track
- * map in a fixed right-hand column on large screens (stacked above the
- * leaderboard below that), and the replay bar along the bottom whenever the
- * backend is idle or replaying.
+ * Shell: status strip across the top, leaderboard filling the left, and a
+ * fixed right-hand column on large screens holding the flag panel, the track
+ * map, and the fastest-sectors panel, top to bottom. On small screens that
+ * column stacks above the leaderboard instead, in the same order.
  *
  * The radio panel (bottom right) is still Tier B and deliberately absent
  * rather than stubbed.
@@ -21,8 +23,12 @@ export default function App() {
       <StatusStrip />
 
       <main className="flex min-h-0 flex-1 flex-col bg-f1-bg lg:flex-row">
-        <div className="h-56 shrink-0 border-b border-f1-line lg:order-2 lg:h-auto lg:w-[26rem] lg:border-b-0 lg:border-l">
-          <TrackMap />
+        <div className="flex shrink-0 flex-col border-b border-f1-line lg:order-2 lg:h-auto lg:w-[26rem] lg:border-b-0 lg:border-l">
+          <FlagPanel />
+          <div className="h-56 shrink-0 lg:h-auto lg:min-h-0 lg:flex-1">
+            <TrackMap />
+          </div>
+          <SectorBests />
         </div>
         <div className="min-h-0 flex-1 lg:order-1">
           <Leaderboard />

@@ -597,3 +597,179 @@ def test_race_gap_is_left_untouched_even_with_no_intervals_yet() -> None:
     by_number = {d.driver_number: d for d in source.snapshot().drivers}
     assert by_number[1].gap_to_leader is None
     assert by_number[2].gap_to_leader is None
+
+
+# -- sector flags and safety car ---------------------------------------------------
+
+
+def _rc(**fields: object) -> dict[str, object]:
+    return {"session_key": 1, **fields}
+
+
+def test_a_sector_yellow_is_set_and_appears_in_sector_flags() -> None:
+    source = OpenF1LiveSource()
+    source.ingest("v1/laps", {"session_key": 1, "driver_number": 1, "lap_number": 1, "_id": 1})
+    source.ingest("v1/race_control", _rc(date="2026-01-01T00:00:00Z", category="Flag",
+                                         scope="Sector", sector=7, flag="YELLOW",
+                                         message="YELLOW IN TRACK SECTOR 7"))
+
+    flags = source.snapshot().sector_flags
+    assert len(flags) == 1
+    assert flags[0].sector == 7
+    assert flags[0].flag == "YELLOW"
+    assert flags[0].since == "2026-01-01T00:00:00Z"
+
+
+def test_a_sector_is_cleared_by_its_own_clear() -> None:
+    source = OpenF1LiveSource()
+    source.ingest("v1/laps", {"session_key": 1, "driver_number": 1, "lap_number": 1, "_id": 1})
+    source.ingest("v1/race_control", _rc(date="2026-01-01T00:00:00Z", category="Flag",
+                                         scope="Sector", sector=7, flag="DOUBLE YELLOW"))
+    source.ingest("v1/race_control", _rc(date="2026-01-01T00:00:10Z", category="Flag",
+                                         scope="Sector", sector=7, flag="CLEAR"))
+
+    assert source.snapshot().sector_flags == []
+
+
+def test_other_sectors_stay_yellow_when_one_clears() -> None:
+    source = OpenF1LiveSource()
+    source.ingest("v1/laps", {"session_key": 1, "driver_number": 1, "lap_number": 1, "_id": 1})
+    source.ingest("v1/race_control", _rc(date="2026-01-01T00:00:00Z", category="Flag",
+                                         scope="Sector", sector=3, flag="YELLOW"))
+    source.ingest("v1/race_control", _rc(date="2026-01-01T00:00:01Z", category="Flag",
+                                         scope="Sector", sector=7, flag="YELLOW"))
+    source.ingest("v1/race_control", _rc(date="2026-01-01T00:00:10Z", category="Flag",
+                                         scope="Sector", sector=3, flag="CLEAR"))
+
+    flags = source.snapshot().sector_flags
+    assert [f.sector for f in flags] == [7]
+
+
+def test_a_track_scope_green_clears_every_sector() -> None:
+    source = OpenF1LiveSource()
+    source.ingest("v1/laps", {"session_key": 1, "driver_number": 1, "lap_number": 1, "_id": 1})
+    source.ingest("v1/race_control", _rc(date="2026-01-01T00:00:00Z", category="Flag",
+                                         scope="Sector", sector=3, flag="YELLOW"))
+    source.ingest("v1/race_control", _rc(date="2026-01-01T00:00:01Z", category="Flag",
+                                         scope="Sector", sector=9, flag="DOUBLE YELLOW"))
+    source.ingest("v1/race_control", _rc(date="2026-01-01T00:00:10Z", category="Flag",
+                                         scope="Track", flag="GREEN"))
+
+    assert source.snapshot().sector_flags == []
+    assert source.snapshot().track_flag is None
+
+
+def test_sector_flags_are_ordered_by_sector_number() -> None:
+    source = OpenF1LiveSource()
+    source.ingest("v1/laps", {"session_key": 1, "driver_number": 1, "lap_number": 1, "_id": 1})
+    source.ingest("v1/race_control", _rc(date="2026-01-01T00:00:00Z", category="Flag",
+                                         scope="Sector", sector=9, flag="YELLOW"))
+    source.ingest("v1/race_control", _rc(date="2026-01-01T00:00:01Z", category="Flag",
+                                         scope="Sector", sector=2, flag="YELLOW"))
+
+    assert [f.sector for f in source.snapshot().sector_flags] == [2, 9]
+
+
+def test_vsc_deployed_then_ending() -> None:
+    source = OpenF1LiveSource()
+    source.ingest("v1/laps", {"session_key": 1, "driver_number": 1, "lap_number": 1, "_id": 1})
+    source.ingest("v1/race_control", _rc(date="2026-01-01T00:00:00Z", category="SafetyCar",
+                                         message="VIRTUAL SAFETY CAR DEPLOYED"))
+    assert source.snapshot().safety_car == "VSC DEPLOYED"
+
+    source.ingest("v1/race_control", _rc(date="2026-01-01T00:02:00Z", category="SafetyCar",
+                                         message="VIRTUAL SAFETY CAR ENDING"))
+    assert source.snapshot().safety_car == "VSC ENDING"
+
+
+def test_full_safety_car_deployed_is_not_confused_with_vsc() -> None:
+    """"SAFETY CAR DEPLOYED" is a substring of "VIRTUAL SAFETY CAR DEPLOYED" -
+    the two must not be conflated in either direction."""
+    source = OpenF1LiveSource()
+    source.ingest("v1/laps", {"session_key": 1, "driver_number": 1, "lap_number": 1, "_id": 1})
+    source.ingest("v1/race_control", _rc(date="2026-01-01T00:00:00Z", category="SafetyCar",
+                                         message="SAFETY CAR DEPLOYED"))
+    assert source.snapshot().safety_car == "SC DEPLOYED"
+
+
+def test_safety_car_in_this_lap() -> None:
+    source = OpenF1LiveSource()
+    source.ingest("v1/laps", {"session_key": 1, "driver_number": 1, "lap_number": 1, "_id": 1})
+    source.ingest("v1/race_control", _rc(date="2026-01-01T00:00:00Z", category="SafetyCar",
+                                         message="SAFETY CAR IN THIS LAP"))
+    assert source.snapshot().safety_car == "SC IN THIS LAP"
+
+
+def test_safety_car_cleared_by_a_later_track_green() -> None:
+    source = OpenF1LiveSource()
+    source.ingest("v1/laps", {"session_key": 1, "driver_number": 1, "lap_number": 1, "_id": 1})
+    source.ingest("v1/race_control", _rc(date="2026-01-01T00:00:00Z", category="SafetyCar",
+                                         message="SAFETY CAR DEPLOYED"))
+    source.ingest("v1/race_control", _rc(date="2026-01-01T00:05:00Z", category="Flag",
+                                         scope="Track", flag="GREEN"))
+
+    assert source.snapshot().safety_car is None
+
+
+def test_safety_car_not_cleared_by_an_earlier_track_green() -> None:
+    """Only a green that arrives *after* the safety car record may clear it."""
+    source = OpenF1LiveSource()
+    source.ingest("v1/laps", {"session_key": 1, "driver_number": 1, "lap_number": 1, "_id": 1})
+    source.ingest("v1/race_control", _rc(date="2026-01-01T00:00:00Z", category="Flag",
+                                         scope="Track", flag="GREEN"))
+    source.ingest("v1/race_control", _rc(date="2026-01-01T00:05:00Z", category="SafetyCar",
+                                         message="SAFETY CAR DEPLOYED"))
+
+    assert source.snapshot().safety_car == "SC DEPLOYED"
+
+
+# -- sector leaders -----------------------------------------------------------------
+
+
+def _driver_lap(driver: int, s1: float | None, s2: float | None, s3: float | None) -> dict[str, object]:
+    fields: dict[str, object] = {"lap_duration": 80.0}
+    if s1 is not None:
+        fields["duration_sector_1"] = s1
+    if s2 is not None:
+        fields["duration_sector_2"] = s2
+    if s3 is not None:
+        fields["duration_sector_3"] = s3
+    return {"session_key": 1, "driver_number": driver, "lap_number": 1, "_id": driver, **fields}
+
+
+def test_sector_leaders_ranks_ascending_and_caps_at_three_of_four() -> None:
+    source = OpenF1LiveSource()
+    source.ingest(TOPIC_LAPS, _driver_lap(1, 27.0, 28.0, 26.0))
+    source.ingest(TOPIC_LAPS, _driver_lap(2, 26.5, 27.5, 26.5))
+    source.ingest(TOPIC_LAPS, _driver_lap(3, 27.5, 27.0, 25.5))
+    source.ingest(TOPIC_LAPS, _driver_lap(4, 28.0, 29.0, 27.0))
+
+    leaders = source.snapshot().sector_leaders
+    assert len(leaders) == 3
+    s1, s2, s3 = leaders
+    assert [entry.driver_number for entry in s1] == [2, 1, 3], "ascending, capped at 3 of 4"
+    assert [entry.time for entry in s1] == [26.5, 27.0, 27.5]
+    assert [entry.driver_number for entry in s2] == [3, 2, 1]
+    assert [entry.driver_number for entry in s3] == [3, 1, 2]
+
+
+def test_a_driver_with_no_sector_2_is_absent_from_that_list_only() -> None:
+    source = OpenF1LiveSource()
+    source.ingest(TOPIC_LAPS, _driver_lap(1, 27.0, None, 26.0))
+    source.ingest(TOPIC_LAPS, _driver_lap(2, 26.5, 27.5, 26.5))
+
+    leaders = source.snapshot().sector_leaders
+    assert [e.driver_number for e in leaders[0]] == [2, 1]
+    assert [e.driver_number for e in leaders[1]] == [2], "driver 1 has no sector 2 time"
+    assert [e.driver_number for e in leaders[2]] == [1, 2]
+
+
+def test_sector_leaders_carry_acronym_and_team_colour() -> None:
+    source = OpenF1LiveSource()
+    source.ingest("v1/drivers", {"session_key": 1, "driver_number": 1,
+                                 "name_acronym": "LEC", "team_colour": "ED1131"})
+    source.ingest(TOPIC_LAPS, _driver_lap(1, 27.0, 28.0, 26.0))
+
+    entry = source.snapshot().sector_leaders[0][0]
+    assert entry.name_acronym == "LEC"
+    assert entry.team_colour == "ED1131"

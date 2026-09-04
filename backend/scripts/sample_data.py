@@ -258,8 +258,36 @@ def build_messages() -> list[tuple[str, dict[str, Any]]]:
     )
     messages.append(
         ("v1/race_control", {"date": "2026-09-04T11:46:00+00:00", "category": "Flag",
-                             "flag": "YELLOW", "scope": "Track", "sector": 3,
-                             "message": "YELLOW IN TRACK SECTOR 3", "session_key": 9999})
+                             "flag": "YELLOW", "scope": "Track",
+                             "message": "YELLOW FLAG DEPLOYED", "session_key": 9999})
+    )
+    # Two marshal sectors under local yellow, so FlagPanel has rows to show.
+    messages.append(
+        ("v1/race_control", {"date": "2026-09-04T11:46:02+00:00", "category": "Flag",
+                             "flag": "DOUBLE YELLOW", "scope": "Sector", "sector": 3,
+                             "message": "DOUBLE YELLOW IN TRACK SECTOR 3", "session_key": 9999})
+    )
+    messages.append(
+        ("v1/race_control", {"date": "2026-09-04T11:46:05+00:00", "category": "Flag",
+                             "flag": "YELLOW", "scope": "Sector", "sector": 7,
+                             "message": "YELLOW IN TRACK SECTOR 7", "session_key": 9999})
+    )
+    # A virtual safety car, so the panel's banner is exercised in demo mode.
+    messages.append(
+        ("v1/race_control", {"date": "2026-09-04T11:46:10+00:00", "category": "SafetyCar",
+                             "message": "VIRTUAL SAFETY CAR DEPLOYED", "session_key": 9999})
+    )
+    # Driver flags, so the chip row has something to show.
+    messages.append(
+        ("v1/race_control", {"date": "2026-09-04T11:46:12+00:00", "category": "Flag",
+                             "flag": "BLUE", "scope": "Driver", "driver_number": grid[1]["driver_number"],
+                             "message": "BLUE FLAG", "session_key": 9999})
+    )
+    messages.append(
+        ("v1/race_control", {"date": "2026-09-04T11:46:20+00:00", "category": "Flag",
+                             "flag": "BLACK AND WHITE", "scope": "Driver",
+                             "driver_number": grid[5]["driver_number"],
+                             "message": "BLACK AND WHITE FLAG - TRACK LIMITS", "session_key": 9999})
     )
     return messages
 

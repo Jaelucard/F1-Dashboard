@@ -2,6 +2,21 @@ import type { SessionState } from '../types/sessionState'
 import type { ConnectionStatus } from './types'
 
 /**
+ * Colours for OpenF1's track-flag values. Shared between the small chip in
+ * StatusStrip and the large flag in FlagPanel, so the two can never disagree
+ * about what a colour means.
+ */
+export const FLAG_STYLES: Record<string, string> = {
+  YELLOW: 'bg-timing-slower text-black',
+  'DOUBLE YELLOW': 'bg-timing-slower text-black',
+  RED: 'bg-f1-red text-white',
+  GREEN: 'bg-timing-personal text-black',
+  BLUE: 'bg-[#3B82F6] text-white',
+  CHEQUERED: 'bg-white text-black',
+  'BLACK AND WHITE': 'bg-white text-black',
+}
+
+/**
  * What the badge in the status strip says, derived from three separate facts:
  *
  *   1. the browser's own WebSocket (`status`, and how long since a frame)

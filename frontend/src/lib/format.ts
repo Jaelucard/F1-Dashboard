@@ -143,6 +143,19 @@ export function sectorColour(
   return 'slower'
 }
 
+/**
+ * Wall-clock time of one race control message, HH:MM:SS in UTC - the frame
+ * OpenF1 timestamps in, and what the "since" column needs to stay meaningful
+ * however the viewer's own timezone is set.
+ */
+export function formatUtcClock(iso: string | null | undefined): string {
+  if (!iso) return NO_DATA
+  const date = new Date(iso)
+  if (Number.isNaN(date.getTime())) return NO_DATA
+  const pad = (n: number) => String(n).padStart(2, '0')
+  return `${pad(date.getUTCHours())}:${pad(date.getUTCMinutes())}:${pad(date.getUTCSeconds())}`
+}
+
 /** Session clock: elapsed time since the session started. */
 export function formatSessionClock(startIso: string | null, now: Date = new Date()): string {
   if (!startIso) return NO_DATA

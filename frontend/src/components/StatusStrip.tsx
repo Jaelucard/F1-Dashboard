@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useStore } from '../store'
 import { formatDataAge, formatSessionClock, NO_DATA } from '../lib/format'
-import { feedBadge, SOCKET_STALE_SECONDS, type BadgeTone } from '../lib/status'
+import { feedBadge, FLAG_STYLES, SOCKET_STALE_SECONDS, type BadgeTone } from '../lib/status'
 
 /**
  * The top strip: what session, how far into it, what flag, and - the part that
@@ -16,16 +16,6 @@ import { feedBadge, SOCKET_STALE_SECONDS, type BadgeTone } from '../lib/status'
  *             reported by the recorder. This is what says whether OpenF1 is
  *             sending anything. It is what makes the LIVE badge honest.
  */
-
-const FLAG_STYLES: Record<string, string> = {
-  YELLOW: 'bg-timing-slower text-black',
-  'DOUBLE YELLOW': 'bg-timing-slower text-black',
-  RED: 'bg-f1-red text-white',
-  GREEN: 'bg-timing-personal text-black',
-  BLUE: 'bg-[#3B82F6] text-white',
-  CHEQUERED: 'bg-white text-black',
-  'BLACK AND WHITE': 'bg-white text-black',
-}
 
 const BADGE_STYLES: Record<BadgeTone, string> = {
   live: 'bg-f1-red text-white',

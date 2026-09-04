@@ -62,6 +62,25 @@ class SessionInfo(Base):
     """Formatted "02:00:00", not a number of hours. Parse before using."""
 
 
+class SectorLeader(Base):
+    """One driver's place on a sector's fastest-three leaderboard."""
+
+    driver_number: int
+    name_acronym: str | None = None
+    team_colour: str | None = None
+    time: float
+
+
+class SectorFlag(Base):
+    """One marshal sector currently under yellow or double yellow."""
+
+    sector: int
+    flag: str
+    """"YELLOW" or "DOUBLE YELLOW"."""
+    since: str | None = None
+    """``date`` of the race control record that raised it."""
+
+
 class RaceControlMessage(Base):
     date: str | None = None
     category: str | None = None
@@ -277,6 +296,21 @@ class SessionState(Base):
 
     The minimum of each driver's ``best_sector_n``, so the sector-time colour
     can go purple without the frontend rescanning every row."""
+
+    sector_flags: list[SectorFlag] = Field(default_factory=list)
+    """Marshal sectors currently showing yellow or double yellow, ordered by
+    sector number. A sector clears on a later CLEAR/GREEN for that same
+    sector, or on any Track-scope CLEAR/GREEN, which clears every sector."""
+
+    sector_leaders: list[list[SectorLeader]] = Field(default_factory=lambda: [[], [], []])
+    """[sector 1, sector 2, sector 3] leaderboards: up to three fastest drivers
+    each, ranked ascending by ``best_sector_n``. Reuses the values already
+    computed for the drivers list - no separate lap scan."""
+
+    safety_car: str | None = None
+    """"SC DEPLOYED", "VSC DEPLOYED", "SC IN THIS LAP" or "VSC ENDING", derived
+    from race control SafetyCar messages. Cleared by a Track-scope GREEN or
+    CLEAR arriving after the last SafetyCar record."""
 
     race_control: list[RaceControlMessage] = Field(default_factory=list)
     recorder: RecorderInfo | None = None
