@@ -56,4 +56,15 @@ describe('SectorBests', () => {
     const s1 = screen.getByTestId('sector-bests').querySelector('[data-col="s1"]')!
     expect(s1).toHaveTextContent('—')
   })
+
+  // The boot state, before the first snapshot arrives. A selector that builds
+  // a fresh fallback array on every call never compares equal to itself, so
+  // zustand re-renders forever and React tears the whole tree down.
+  it('renders placeholders before the first snapshot arrives', () => {
+    render(<SectorBests />)
+    const panel = screen.getByTestId('sector-bests')
+    expect(panel.querySelector('[data-col="s1"]')).toHaveTextContent('\u2014')
+    expect(panel.querySelector('[data-col="s2"]')).toHaveTextContent('\u2014')
+    expect(panel.querySelector('[data-col="s3"]')).toHaveTextContent('\u2014')
+  })
 })

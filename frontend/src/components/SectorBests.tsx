@@ -16,8 +16,13 @@ const SECTORS: { label: string; index: 0 | 1 | 2 }[] = [
   { label: 'S3', index: 2 },
 ]
 
+// A stable fallback for the pre-snapshot state: building `[[], [], []]` inside
+// the selector returns a new array identity on every call, so zustand sees the
+// slice change on every render and loops until React tears the tree down.
+const EMPTY_LEADERS: SectorLeader[][] = [[], [], []]
+
 export function SectorBests() {
-  const leaders = useStore((s) => s.snapshot?.sector_leaders ?? [[], [], []])
+  const leaders = useStore((s) => s.snapshot?.sector_leaders ?? EMPTY_LEADERS)
 
   return (
     <section
