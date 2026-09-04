@@ -200,6 +200,12 @@ class AdapterInfo(Base):
     """Messages for a session older than the active one. Never shown."""
     session_switches: int = 0
     driver_build_errors: int = 0
+    backfilled_records: int = 0
+    """Rows fetched over REST by ``backfill.py`` rather than received over MQTT.
+
+    Counted apart from ``messages_seen`` so that stays a count of what actually
+    came off the wire. A mid-session connect misses the one-shot ``v1/sessions``
+    and ``v1/drivers`` announcements, and this is how they are recovered."""
 
 
 ReplayState = Literal["loaded", "playing", "paused", "seeking", "finished"]

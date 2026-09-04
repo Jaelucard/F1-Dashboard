@@ -580,6 +580,7 @@ class OpenF1LiveSource(SessionDataSource):
         self._active_key: int | None = None
 
         self._messages_seen = 0
+        self._backfilled_records = 0
         self._last_message_at: datetime | None = None
         self._unknown_topics: set[str] = set()
         self._quarantined = 0
@@ -591,14 +592,22 @@ class OpenF1LiveSource(SessionDataSource):
 
     # -- ingest -------------------------------------------------------------
 
-    def ingest(self, topic: str, payload: Any) -> bool:
+    def ingest(self, topic: str, payload: Any, *, backfill: bool = False) -> bool:
         """Apply one message. Safe to call from the recorder's thread.
 
         Returns True if the record was applied to some session's store.
+
+        ``backfill=True`` marks a row fetched over REST by ``backfill.py``
+        rather than received over MQTT. It goes through exactly the same
+        validation, keying and scoping - only the counter differs, so
+        ``messages_seen`` stays a count of what actually came off the wire.
         """
         with self._lock:
-            self._messages_seen += 1
-            self._last_message_at = datetime.now(timezone.utc)
+            if backfill:
+                self._backfilled_records += 1
+            else:
+                self._messages_seen += 1
+                self._last_message_at = datetime.now(timezone.utc)
 
             if topic not in KNOWN_TOPICS and topic not in self._unknown_topics:
                 # Record it anyway - an unexpected topic is data we should not
@@ -980,11 +989,34 @@ class OpenF1LiveSource(SessionDataSource):
             late_session_messages=self._late_session_messages,
             session_switches=self._session_switches,
             driver_build_errors=self._driver_build_errors,
+            backfilled_records=self._backfilled_records,
         )
 
     @property
     def active_session_key(self) -> int | None:
         return self._active_key
+
+    def set_session_switch_hook(self, hook: Callable[[int | None, int], None] | None) -> None:
+        """Replace the session-switch callback after construction.
+
+        Exists because the hook's owner (``backfill.py``) needs the adapter it
+        is watching, so one of the two has to be wired up second.
+        """
+        with self._lock:
+            self._on_session_switch = hook
+
+    def record_count(self, topic: str) -> int:
+        """How many records the active session holds for a topic.
+
+        ``backfill.py`` uses this to tell "the announcement never arrived" from
+        "we connected before it did".
+        """
+        with self._lock:
+            bucket = self._active()
+            if bucket is None:
+                return 0
+            store = bucket.stores.get(topic)
+            return len(store) if store is not None else 0
 
     def stats(self) -> dict[str, Any]:
         with self._lock:
@@ -992,6 +1024,7 @@ class OpenF1LiveSource(SessionDataSource):
             stores = bucket.stores if bucket is not None else {}
             return {
                 "messages_seen": self._messages_seen,
+                "backfilled_records": self._backfilled_records,
                 "last_message_at": (
                     self._last_message_at.isoformat(timespec="milliseconds")
                     if self._last_message_at

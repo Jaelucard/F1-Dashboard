@@ -745,7 +745,8 @@
     "malformed_fields": 0,
     "late_session_messages": 0,
     "session_switches": 0,
-    "driver_build_errors": 0
+    "driver_build_errors": 0,
+    "backfilled_records": 0
   },
   "replay": null,
   "degraded": false,

@@ -18,6 +18,8 @@ from fastapi.responses import JSONResponse
 
 from app import PHASE, ws
 from app.adapters.openf1_live import OpenF1LiveSource
+from app.auth import TokenProvider
+from app.backfill import BackfillService
 from app.config import describe_recordings_dir, get_settings
 from app.feed import compute_feed, evaluate_health
 from app.models import FeedInfo, RecorderInfo, SessionState
@@ -67,11 +69,13 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         app.state.recorder = None
         app.state.source = source
         app.state.demo = True
+        app.state.backfill = None
         yield
         log.info("backend shutting down")
         return
 
     app.state.demo = False
+    app.state.backfill = None
     if settings.live_mode:
         if not settings.credentials_present:
             log.error(
@@ -84,6 +88,15 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             # opening a second MQTT connection. Registered before start() so
             # no message can slip past between connecting and subscribing.
             source = OpenF1LiveSource(credentials_present=True)
+            # Connecting mid-session misses the one-shot v1/sessions and
+            # v1/drivers announcements, so REST fills them in - promptly on a
+            # session switch, and every 60s while they are still missing.
+            backfill = BackfillService(
+                source,
+                api_base=settings.openf1_api_base,
+                token_getter=TokenProvider(settings).get_token,
+            )
+            source.set_session_switch_hook(backfill.nudge)
             recorder.add_subscriber(source.on_raw_message)
             try:
                 recorder.start()
@@ -91,6 +104,10 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
                 log.exception("recorder failed to start; the API stays up")
                 recorder = None
                 source = None
+                backfill = None
+            if backfill is not None:
+                backfill.start()
+                app.state.backfill = backfill
     else:
         log.info("LIVE_MODE is false - not connecting to OpenF1")
 
@@ -99,6 +116,9 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     yield
 
     stop_player(app)
+    service = getattr(app.state, "backfill", None)
+    if service is not None:
+        await service.stop()
     if recorder is not None:
         recorder.stop()
     log.info("backend shutting down")

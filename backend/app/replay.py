@@ -424,6 +424,17 @@ class ReplayPlayer:
                 ingest_errors=self.ingest_errors,
             )
 
+    @property
+    def adapter(self) -> OpenF1LiveSource:
+        """The adapter this recording is being fed into.
+
+        Exposed so ``backfill.py`` can fill in a recording that captured the
+        timing topics but not the one-shot v1/sessions and v1/drivers
+        announcements - which is every recording started mid-session.
+        """
+        with self._lock:
+            return self._adapter
+
     def snapshot(self) -> SessionState:
         with self._lock:
             adapter = self._adapter

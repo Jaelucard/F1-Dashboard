@@ -22,6 +22,14 @@ export interface AdapterInfo {
   late_session_messages: number
   session_switches: number
   driver_build_errors: number
+  /**
+   * Rows fetched over REST by `backfill.py` rather than received over MQTT.
+   *
+   * Counted apart from `messages_seen` so that stays a count of what actually
+   * came off the wire. A mid-session connect misses the one-shot `v1/sessions`
+   * and `v1/drivers` announcements, and this is how they are recovered.
+   */
+  backfilled_records: number
 }
 
 /** Everything the leaderboard needs about one car, already merged. */

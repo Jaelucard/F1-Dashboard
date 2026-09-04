@@ -18,6 +18,8 @@ from typing import Any
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field, model_validator
 
+from app.auth import TokenProvider
+from app.backfill import BackfillService
 from app.config import get_settings
 from app.replay import (
     MAX_SESSION_KEY,
@@ -114,6 +116,7 @@ async def load(body: LoadBody, request: Request) -> dict[str, Any]:
     except ReplayError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     request.app.state.replay = player
+    _start_replay_backfill(request.app, player)
     log.info("replay loaded: session %s", body.session_key)
     return player.info().model_dump()
 
@@ -148,8 +151,38 @@ async def unload(request: Request) -> dict[str, Any]:
     return IDLE
 
 
+def _start_replay_backfill(app: Any, player: ReplayPlayer) -> None:
+    """Fill in a recording that has timing topics but no session or driver rows.
+
+    A recording started mid-session missed the one-shot v1/sessions and
+    v1/drivers announcements, so replaying it would show NO SESSION, no outline
+    and bare driver numbers - the same hole the live path has, from the same
+    cause. Skipped in demo mode; a fetch failure only leaves the replay as it
+    would have been anyway, so nothing here is allowed to fail the load.
+    """
+    if getattr(app.state, "demo", False):
+        return
+    settings = get_settings()
+    service = BackfillService(
+        player.adapter,
+        api_base=settings.openf1_api_base,
+        token_getter=TokenProvider(settings).get_token if settings.credentials_present else None,
+    )
+    try:
+        service.start()
+    except RuntimeError:  # no running loop: nothing to attach to
+        return
+    # It fires once replay starts and a timing message establishes the active
+    # session - before that there is no bucket for the rows to be visible in.
+    app.state.replay_backfill = service
+
+
 def stop_player(app: Any) -> None:
     """Stop and forget the current player, if any. Safe to call when idle."""
+    service = getattr(app.state, "replay_backfill", None)
+    if service is not None:
+        service.cancel()  # sync: stop_player is called from non-async paths too
+        app.state.replay_backfill = None
     player = getattr(app.state, "replay", None)
     if player is not None:
         player.stop()
