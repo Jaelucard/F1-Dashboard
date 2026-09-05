@@ -58,6 +58,15 @@ Open **http://localhost:5173**. The Vite dev server proxies `/health` and `/ws`
 to the backend, so everything is same-origin and no backend URL is baked into
 the frontend.
 
+Stop it with Ctrl-C. `make dev` refuses to start while port 8000 or 5173 is
+already taken and prints the pid holding it; that means a previous run is still
+there, so `kill` it (or `kill -9` if it ignores that) and run `make dev` again.
+The launcher (`scripts/dev.sh`) also stops the frontend if the backend dies,
+rather than leaving a UI up that can only ever say CONNECTING, and force-kills
+anything still holding either port a few seconds after shutdown begins. The
+comment at the top of that script explains the uvicorn reloader deadlock that
+made this necessary.
+
 Useful endpoints:
 
 - `GET http://127.0.0.1:8000/health` - liveness plus `status`, `ready`, `problems`, feed state, recorder health

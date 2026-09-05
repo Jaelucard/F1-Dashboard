@@ -40,15 +40,14 @@ dev-backend:
 dev-frontend:
 	cd frontend && npm run dev
 
-# Runs both and shuts both down on Ctrl-C. The frontend proxies /ws and /health
-# to the backend, so open http://localhost:5173 only.
+# Runs both and shuts both down together. scripts/dev.sh refuses to start
+# while :8000 or :5173 is taken (naming the pid to kill), stops the other
+# process when one dies, and force-kills anything still holding a port a few
+# seconds after Ctrl-C - see the comment at the top of that script for the
+# uvicorn reloader deadlock that made this necessary. The frontend proxies
+# /ws and /health to the backend, so open http://localhost:5173 only.
 dev:
-	@echo "backend  -> http://127.0.0.1:8000"
-	@echo "frontend -> http://localhost:5173   <- open this one"
-	@trap 'kill 0' EXIT INT TERM; \
-		( cd backend && .venv/bin/uvicorn app.main:app --reload --port 8000 ) & \
-		( cd frontend && npm run dev ) & \
-		wait
+	@./scripts/dev.sh dev
 
 # The recorder alone, with nothing else that could break it. Use this rather
 # than `make dev` if all you need is a complete capture of a session.
@@ -56,12 +55,9 @@ record:
 	cd backend && .venv/bin/python -m app.recorder
 
 # Serve the synthetic grid so the UI can be checked outside a session window.
+# Same launcher as `make dev`, without --reload and without OpenF1.
 demo:
-	@echo "frontend -> http://localhost:5173   (synthetic data, nothing connects)"
-	@trap 'kill 0' EXIT INT TERM; \
-		( cd backend && DEMO_MODE=true LIVE_MODE=false .venv/bin/uvicorn app.main:app --port 8000 ) & \
-		( cd frontend && npm run dev ) & \
-		wait
+	@./scripts/dev.sh demo
 
 # Regenerate everything derived from the pydantic models. A backend test
 # fails if these are stale, so run this after touching app/models.py.
